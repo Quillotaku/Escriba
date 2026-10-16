@@ -83,3 +83,33 @@ data class SessionEnd(
     val totalFragments: Int,
     val endMs: Long,
 )
+
+@Serializable
+data class SessionEndAck(
+    val sessionId: String,
+)
+
+/** Estado del reloj que se envía al móvil con cada lote, para el panel. */
+@Serializable
+data class WatchStatus(
+    val phase: String,
+    val pendingFragments: Int,
+    val pendingBytes: Long,
+    val batteryPct: Float?,
+    val charging: Boolean,
+    val atMs: Long,
+)
+
+// --- Emparejamiento (en claro: solo lleva claves públicas, nonces y compromisos) ---
+
+@Serializable
+data class PairInit(val commit: String, val name: String)
+
+@Serializable
+data class PairReply(val publicKey: String, val nonce: String, val name: String)
+
+@Serializable
+data class PairReveal(val publicKey: String, val nonce: String)
+
+@Serializable
+data class PairConfirm(val mac: String)

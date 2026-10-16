@@ -20,5 +20,5 @@ dependencies {
     api(project(":shared"))
     api(libs.play.services.wearable)
     api(libs.kotlinx.coroutines.android)
-    implementation(libs.kotlinx.coroutines.play.services)
+    api(libs.kotlinx.coroutines.play.services)
 }

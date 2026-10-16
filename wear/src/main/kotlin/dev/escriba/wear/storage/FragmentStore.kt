@@ -23,6 +23,8 @@ data class SessionMeta(
     val mode: String,
     val endMs: Long? = null,
     val totalFragments: Int? = null,
+    /** El móvil confirmó que sabe que la sesión terminó. */
+    val endAcked: Boolean = false,
 )
 
 /**
@@ -112,7 +114,9 @@ class FragmentStore(private val root: File, private val sampleRate: Int, private
                 endSession(session.sessionId, headers.maxOfOrNull { it.endMs } ?: session.startMs, headers.size)
                 AppLog.i(TAG, "Sesión ${session.sessionId.take(8)} cerrada en la recuperación (${headers.size} fragmentos)")
             }
-            if (headersIn(dir).isEmpty()) dir.deleteRecursively()
+            // Sin audio pendiente, la sesión solo sigue en el reloj si el móvil aún no sabe que terminó.
+            val current = readSession(dir.name)
+            if (headersIn(dir).isEmpty() && (current?.endAcked == true || (current?.totalFragments ?: 0) == 0)) dir.deleteRecursively()
         }
         return recovered
     }
@@ -147,6 +151,41 @@ class FragmentStore(private val root: File, private val sampleRate: Int, private
 
     /** Fragmentos cerrados pendientes de envío, en orden. */
     fun pending(): List<FragmentHeader> = sessionDirs().flatMap { headersIn(it) }.sortedWith(compareBy({ it.sessionStartMs }, { it.seq }))
+
+    /** Sesiones terminadas cuyo final aún no ha confirmado el móvil. */
+    fun endedSessions(): List<SessionMeta> =
+        sessionDirs().mapNotNull { readSession(it.name) }.filter { it.endMs != null && !it.endAcked }
+
+    /** Borra una sesión terminada sin ningún fragmento: el móvil nunca supo de ella. */
+    fun deleteEmptySession(sessionId: String) {
+        val dir = sessionDir(sessionId)
+        if (headersIn(dir).isEmpty() && dir.listFiles { f -> f.name.endsWith(PART) }.orEmpty().isEmpty()) dir.deleteRecursively()
+    }
+
+    /** El móvil confirmó un fragmento: ya puede borrarse del reloj. */
+    fun delete(header: FragmentHeader) {
+        val dir = sessionDir(header.sessionId)
+        File(dir, "${header.seq}$OGG").delete()
+        File(dir, "${header.seq}$HEADER").delete()
+        cleanup(header.sessionId)
+    }
+
+    fun markEndAcked(sessionId: String) {
+        val meta = readSession(sessionId) ?: return
+        writeAtomic(File(sessionDir(sessionId), SESSION_FILE), EscribaJson.encodeToString(meta.copy(endAcked = true)))
+        cleanup(sessionId)
+    }
+
+    /** Una sesión desaparece del reloj cuando el móvil tiene su final y todos sus fragmentos. */
+    private fun cleanup(sessionId: String) {
+        val meta = readSession(sessionId) ?: return
+        val dir = sessionDir(sessionId)
+        val hasAudio = dir.listFiles { f -> f.name.endsWith(OGG) || f.name.endsWith(PART) }.orEmpty().isNotEmpty()
+        if (meta.endAcked && !hasAudio) {
+            dir.deleteRecursively()
+            AppLog.i(TAG, "Sesión ${sessionId.take(8)} entregada por completo; borrada del reloj")
+        }
+    }
 
     fun audioFile(header: FragmentHeader): File = File(sessionDir(header.sessionId), "${header.seq}$OGG")
 

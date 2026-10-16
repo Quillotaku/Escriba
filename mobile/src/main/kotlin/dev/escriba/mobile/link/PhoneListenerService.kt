@@ -1,5 +1,6 @@
 package dev.escriba.mobile.link
 
+import com.google.android.gms.wearable.ChannelClient
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.WearableListenerService
 import dev.escriba.datalayer.AppLog
@@ -21,5 +22,11 @@ class PhoneListenerService : WearableListenerService() {
         runCatching {
             runBlocking { withTimeout(15_000) { (application as EscribaApp).link.onMessage(event, via = "servicio") } }
         }.onFailure { AppLog.e("link", "Fallo al procesar ${event.path}", it) }
+    }
+
+    override fun onChannelOpened(channel: ChannelClient.Channel) {
+        runCatching {
+            runBlocking { withTimeout(120_000) { (application as EscribaApp).inbox.onChannel(channel) } }
+        }.onFailure { AppLog.e("recepcion", "Fallo al recibir por el canal ${channel.path}", it) }
     }
 }

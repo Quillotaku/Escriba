@@ -24,6 +24,7 @@ import dev.escriba.shared.recording.Fragmenter
 import dev.escriba.wear.EscribaWearApp
 import dev.escriba.wear.storage.FragmentStore
 import dev.escriba.wear.storage.SessionMeta
+import dev.escriba.wear.transfer.UploadWorker
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
@@ -193,6 +194,7 @@ class RecorderService : Service() {
                     AppLog.i(TAG, "Fragmento ${header.seq}: ${speechMs / 1000} s de voz en ${header.segments.size} tramos, " +
                         "${header.sizeBytes / 1024} KB (${kbps(header.sizeBytes, speechMs)} kbps) → ${if (check.ok) "Ogg válido" else "Ogg INVÁLIDO: $check"}")
                     RecordingState.update { it.copy(fragments = it.fragments + 1) }
+                    UploadWorker.kick(this)
                     if (store.stats().bytes > MAX_STORAGE_BYTES) {
                         AppLog.e(TAG, "Almacenamiento lleno: se para la grabación")
                         stopReason = StopReason.STORAGE
@@ -241,6 +243,7 @@ class RecorderService : Service() {
                 fragmenter?.finish()
             }.onFailure { AppLog.e(TAG, "Fallo al cerrar el último fragmento", it) }
             store.endSession(meta.sessionId, System.currentTimeMillis(), fragmenter?.fragmentCount ?: 0)
+            UploadWorker.kick(this)
             val speechPct = if (gate.totalFrames > 0) gate.speechFrames * 100 / gate.totalFrames else 0
             AppLog.i(TAG, "Sesión ${meta.sessionId.take(8)} cerrada: ${fragmenter?.fragmentCount ?: 0} fragmentos, " +
                 "${gate.totalFrames / FRAMES_PER_SECOND} s escuchados, voz $speechPct %")

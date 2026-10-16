@@ -53,4 +53,5 @@ dependencies {
     implementation(libs.concurrent.futures.ktx)
     implementation(libs.wear.ongoing)
     implementation(libs.wear.complications.datasource)
+    implementation(libs.work.runtime.ktx)
 }

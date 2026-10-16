@@ -3,11 +3,14 @@ package dev.escriba.wear
 import android.app.Application
 import dev.escriba.datalayer.AppLog
 import dev.escriba.datalayer.DataLayerLink
+import dev.escriba.datalayer.PairingCoordinator
 import dev.escriba.shared.Protocol
 import dev.escriba.wear.recorder.RecorderNotifications
 import dev.escriba.wear.recorder.RecorderService
 import dev.escriba.wear.recorder.RecordingIntent
 import dev.escriba.wear.storage.FragmentStore
+import dev.escriba.wear.transfer.UploadWorker
+import dev.escriba.wear.transfer.Uploader
 import java.io.File
 
 class EscribaWearApp : Application() {
@@ -18,12 +21,21 @@ class EscribaWearApp : Application() {
     lateinit var store: FragmentStore
         private set
 
+    lateinit var pairing: PairingCoordinator
+        private set
+
+    lateinit var uploader: Uploader
+        private set
+
     override fun onCreate() {
         super.onCreate()
         AppLog.attach(this)
         link = DataLayerLink(this, origin = "wear", peerCapability = Protocol.CAPABILITY_PHONE)
         store = FragmentStore(File(filesDir, "fragments"), RecorderService.SAMPLE_RATE, RecorderService.BITRATE)
+        pairing = PairingCoordinator(link, isWatch = true, deviceName = android.os.Build.MODEL)
+        uploader = Uploader(this, link, store)
         recoverAfterCrash()
+        UploadWorker.ensurePeriodic(this)
     }
 
     /**

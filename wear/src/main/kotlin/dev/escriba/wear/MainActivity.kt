@@ -1,6 +1,19 @@
 package dev.escriba.wear
 
 import android.Manifest
+import android.annotation.SuppressLint
+import android.content.Intent
+import android.net.Uri
+import android.os.PowerManager
+import android.provider.Settings
+import androidx.compose.foundation.layout.Column
+import androidx.compose.ui.Alignment
+import androidx.wear.compose.foundation.lazy.ScalingLazyListScope
+import dev.escriba.datalayer.PairingState
+import dev.escriba.wear.transfer.UploadWorker
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -61,6 +74,18 @@ class MainActivity : ComponentActivity() {
         super.onStop()
     }
 
+    @SuppressLint("BatteryLife") // app personal instalada por ADB: necesita sobrevivir en segundo plano
+    private fun requestBatteryExemption() {
+        val power = getSystemService(PowerManager::class.java)
+        if (power.isIgnoringBatteryOptimizations(packageName)) {
+            AppLog.i("ui", "Escriba ya está fuera de la optimización de batería")
+            return
+        }
+        runCatching {
+            startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
+        }.onFailure { AppLog.e("ui", "El reloj no permite abrir ese ajuste", it) }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val missing = arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.POST_NOTIFICATIONS)
@@ -83,6 +108,13 @@ class MainActivity : ComponentActivity() {
                             .onFailure { AppLog.e("ui", "Fallo al enviar el ping", it) }
                     },
                     batteryNow = { BatteryLog.read(this)?.level },
+                    link = {
+                        LinkSection(
+                            app = app,
+                            sendNow = { UploadWorker.kick(this@MainActivity, manual = true) },
+                            exemptFromBatteryOptimization = ::requestBatteryExemption,
+                        )
+                    },
                 )
             }
         }
@@ -96,6 +128,7 @@ private fun RecorderScreen(
     toggleRecording: () -> Unit,
     ping: suspend () -> Unit,
     batteryNow: () -> Float?,
+    link: ScalingLazyListScope.() -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val phase by RecordingState.phase.collectAsStateWithLifecycle()
@@ -161,6 +194,7 @@ private fun RecorderScreen(
                 Text(if (idle) "Grabar" else "Parar")
             }
         }
+        link()
         item { ListHeader { Text("Ajustes") } }
         item {
             SettingButton("Modo: ${mode.label}", enabled = idle) {
@@ -218,6 +252,76 @@ private fun RecorderScreen(
                 textAlign = TextAlign.Start,
                 modifier = Modifier.fillMaxWidth(),
             )
+        }
+    }
+}
+
+/** Emparejamiento y envío al móvil. */
+private fun ScalingLazyListScope.LinkSection(
+    app: EscribaWearApp,
+    sendNow: () -> Unit,
+    exemptFromBatteryOptimization: () -> Unit,
+) {
+    item { ListHeader { Text("Móvil") } }
+    item {
+        val peer by app.link.keys.peer.collectAsStateWithLifecycle()
+        val pairing by app.pairing.state.collectAsStateWithLifecycle()
+        val upload by app.uploader.stats.collectAsStateWithLifecycle()
+        val scope = rememberCoroutineScope()
+        val time = remember { DateTimeFormatter.ofPattern("HH:mm") }
+        fun at(ms: Long) = if (ms == 0L) "—" else Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).format(time)
+
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+            when (val state = pairing) {
+                is PairingState.Code -> {
+                    Text("Código", fontSize = 12.sp)
+                    Text(state.code, fontSize = 30.sp, fontFamily = FontFamily.Monospace)
+                    Text(
+                        when {
+                            state.localConfirmed && !state.peerConfirmed -> "Confirma en el móvil"
+                            state.peerConfirmed && !state.localConfirmed -> "El móvil ya confirmó"
+                            else -> "¿Es el mismo que en el móvil?"
+                        },
+                        fontSize = 11.sp,
+                        textAlign = TextAlign.Center,
+                    )
+                    if (!state.localConfirmed) {
+                        Button(onClick = { scope.launch { app.pairing.confirm() } }, modifier = Modifier.fillMaxWidth()) { Text("Coincide") }
+                    }
+                    SettingButton("Cancelar", enabled = true) { app.pairing.cancel() }
+                }
+                is PairingState.Waiting -> {
+                    Text(state.message, fontSize = 12.sp, textAlign = TextAlign.Center)
+                    SettingButton("Cancelar", enabled = true) { app.pairing.cancel() }
+                }
+                else -> {
+                    val failed = (state as? PairingState.Failed)?.reason
+                    if (failed != null) Text(failed, fontSize = 11.sp, textAlign = TextAlign.Center)
+                    Text(
+                        peer?.let { "Emparejado con ${it.name}" } ?: "Sin emparejar",
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center,
+                    )
+                    if (peer != null) {
+                        Text(
+                            "Enviados ${upload.sentFragments} (${upload.sentBytes / 1024} KB)\n" +
+                                "Último envío ${at(upload.lastSuccessMs)}" +
+                                (upload.lastOutcome?.let { " · ${it.name.lowercase()}" } ?: "") +
+                                (if (upload.lastKbps > 0) "\n${upload.lastKbps} kbps" else ""),
+                            fontSize = 11.sp,
+                            textAlign = TextAlign.Center,
+                        )
+                        SettingButton("Enviar ahora", enabled = true, onClick = sendNow)
+                    }
+                    SettingButton(if (peer == null) "Emparejar" else "Volver a emparejar", enabled = true) {
+                        scope.launch {
+                            runCatching { app.pairing.startAsWatch() }
+                                .onFailure { AppLog.e("enlace", "No se pudo iniciar el emparejamiento", it) }
+                        }
+                    }
+                    SettingButton("Sin optimización de batería", enabled = true, onClick = exemptFromBatteryOptimization)
+                }
+            }
         }
     }
 }

@@ -85,8 +85,8 @@ object OggReader {
         return Result(
             pages = pages,
             validLength = pos,
-            preSkip = if (isOpus) Ogg.getLe(head!!, 10, 2).toInt() else null,
-            inputSampleRate = if (isOpus) Ogg.getLe(head!!, 12, 4).toInt() else null,
+            preSkip = if (isOpus) Ogg.getLe(head, 10, 2).toInt() else null,
+            inputSampleRate = if (isOpus) Ogg.getLe(head, 12, 4).toInt() else null,
         )
     }
 }

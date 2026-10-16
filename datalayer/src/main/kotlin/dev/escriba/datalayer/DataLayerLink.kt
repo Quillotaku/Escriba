@@ -2,10 +2,12 @@ package dev.escriba.datalayer
 
 import android.content.Context
 import com.google.android.gms.wearable.CapabilityClient
+import com.google.android.gms.wearable.ChannelClient
 import com.google.android.gms.wearable.MessageClient
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.Node
 import com.google.android.gms.wearable.Wearable
+import dev.escriba.shared.EscribaJson
 import dev.escriba.shared.Ping
 import dev.escriba.shared.Pong
 import dev.escriba.shared.Protocol
@@ -17,6 +19,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 /** Nodo remoto tal y como lo ve la Data Layer. */
 data class Peer(
@@ -29,9 +32,11 @@ data class Peer(
 /**
  * Enlace con el otro dispositivo por la Wearable Data Layer.
  *
- * Regla de privacidad: solo se envía a nodos con `isNearby == true`, es decir,
- * conectados directamente (Bluetooth). Si el único camino es la nube de Google,
- * no se envía nada.
+ * Reglas de privacidad:
+ *  - solo se envía a nodos con `isNearby == true`, es decir, conectados directamente
+ *    (Bluetooth). Si el único camino es la nube de Google, no se envía nada;
+ *  - todo lo que no sea el ping o el emparejamiento va cifrado con la clave del enlace
+ *    ([sendSealed] / [openSealed]).
  */
 class DataLayerLink(
     context: Context,
@@ -44,9 +49,18 @@ class DataLayerLink(
     private val nodes = Wearable.getNodeClient(appContext)
     private val capabilities = Wearable.getCapabilityClient(appContext)
     private val messages = Wearable.getMessageClient(appContext)
+    val channels: ChannelClient = Wearable.getChannelClient(appContext)
+    val keys = LinkKeyStore(appContext)
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     /** El mismo mensaje puede llegar por las dos vías; se procesa una sola vez. */
     private val seen = LinkedHashSet<String>()
+    private val handlers = ConcurrentHashMap<String, suspend (MessageEvent) -> Unit>()
+
+    /** Registra quién atiende una ruta. Lo usan el emparejamiento y la transferencia. */
+    fun handle(path: String, handler: suspend (MessageEvent) -> Unit) {
+        handlers[path] = handler
+    }
 
     /** Todos los nodos conectados, marcando cuáles tienen Escriba instalada. */
     suspend fun peers(): List<Peer> {
@@ -58,6 +72,46 @@ class DataLayerLink(
             .map(Node::getId)
             .toSet()
         return connected.map { Peer(it.id, it.displayName, it.isNearby, it.id in withApp) }
+    }
+
+    /** El dispositivo emparejado, solo si está conectado directamente. */
+    suspend fun nearbyPairedPeer(): Peer? {
+        val paired = keys.peer.value ?: return null
+        return peers().firstOrNull { it.id == paired.nodeId && it.nearby }
+    }
+
+    /** El primer nodo cercano con Escriba (para emparejar). */
+    suspend fun nearbyPeerWithApp(): Peer? = peers().firstOrNull { it.nearby && it.hasEscriba }
+
+    suspend fun isNearby(nodeId: String): Boolean =
+        nodes.connectedNodes.await().any { it.id == nodeId && it.isNearby }
+
+    /** Envío en claro: solo para el ping y el emparejamiento. */
+    suspend fun sendPlain(nodeId: String, path: String, data: ByteArray) {
+        check(isNearby(nodeId)) { "El otro dispositivo no está conectado directamente" }
+        messages.sendMessage(nodeId, path, data).await()
+    }
+
+    /** Envía [payload] cifrado al dispositivo emparejado. Devuelve false si no está cerca o no hay enlace. */
+    suspend inline fun <reified T> sendSealed(path: String, payload: T): Boolean {
+        val channel = keys.channel() ?: return false
+        val peer = nearbyPairedPeer() ?: return false
+        val sealed = channel.seal(path, EscribaJson.encodeToString(payload).encodeToByteArray())
+        sendRaw(peer.id, path, sealed)
+        return true
+    }
+
+    @PublishedApi
+    internal suspend fun sendRaw(nodeId: String, path: String, data: ByteArray) {
+        messages.sendMessage(nodeId, path, data).await()
+    }
+
+    /** Descifra un mensaje recibido. Rechaza lo que no venga del dispositivo emparejado. */
+    inline fun <reified T> openSealed(event: MessageEvent): T {
+        val peer = keys.peer.value ?: error("Mensaje cifrado sin enlace")
+        check(event.sourceNodeId == peer.nodeId) { "Mensaje de un nodo no emparejado" }
+        val channel = keys.channel() ?: error("Clave del enlace no disponible")
+        return EscribaJson.decodeFromString(channel.open(event.path, event.data).decodeToString())
     }
 
     /** Envía un ping a cada nodo cercano con Escriba. Devuelve a cuántos se envió. */
@@ -101,13 +155,12 @@ class DataLayerLink(
         val key = "${event.sourceNodeId}:${event.requestId}"
         synchronized(seen) {
             if (!seen.add(key)) return
-            if (seen.size > 200) seen.remove(seen.first())
+            if (seen.size > 500) seen.remove(seen.first())
         }
-        AppLog.i(TAG, "Recibido ${event.path.removePrefix(Protocol.PATH_PREFIX)} vía $via")
         when (event.path) {
             Protocol.PATH_PING -> {
                 val ping: Ping = event.data.fromWire()
-                AppLog.i(TAG, "Ping ${ping.id} recibido de ${ping.origin}")
+                AppLog.i(TAG, "Ping ${ping.id} recibido de ${ping.origin} vía $via")
                 if (!isNearby(event.sourceNodeId)) {
                     AppLog.i(TAG, "No se responde: el emisor no está conectado directamente")
                     return
@@ -122,12 +175,12 @@ class DataLayerLink(
                 AppLog.i(TAG, "Pong ${pong.id} de ${pong.origin}: ida y vuelta $rtt ms")
             }
 
-            else -> AppLog.i(TAG, "Mensaje no reconocido: ${event.path}")
+            else -> {
+                val handler = handlers[event.path]
+                if (handler == null) AppLog.i(TAG, "Mensaje no atendido: ${event.path}") else handler(event)
+            }
         }
     }
-
-    private suspend fun isNearby(nodeId: String): Boolean =
-        nodes.connectedNodes.await().any { it.id == nodeId && it.isNearby }
 
     private companion object {
         const val TAG = "link"

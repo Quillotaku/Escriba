@@ -2,8 +2,7 @@ package dev.escriba.wear.recorder
 
 import android.Manifest
 import android.annotation.SuppressLint
-import android.app.NotificationChannel
-import android.app.NotificationManager
+import android.app.AlarmManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
@@ -12,73 +11,91 @@ import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.media.AudioFormat
 import android.media.AudioRecord
-import android.media.MediaRecorder
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
-import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
-import androidx.wear.ongoing.OngoingActivity
-import androidx.wear.ongoing.Status
 import dev.escriba.datalayer.AppLog
-import dev.escriba.wear.MainActivity
-import dev.escriba.wear.R
-import java.io.File
+import dev.escriba.shared.audio.SpeechGate
+import dev.escriba.shared.recording.Fragmenter
+import dev.escriba.wear.EscribaWearApp
+import dev.escriba.wear.storage.FragmentStore
+import dev.escriba.wear.storage.SessionMeta
 import java.time.LocalDateTime
+import java.time.LocalTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import kotlin.math.abs
-import kotlin.math.sqrt
+import java.util.UUID
 
 /**
- * Fase 1 (spike): servicio en primer plano de tipo micrófono que graba a Opus/Ogg.
+ * Servicio en primer plano de tipo micrófono: graba, filtra la voz con el VAD y guarda
+ * fragmentos Opus/Ogg independientes en el reloj.
  *
- * Su objetivo es responder a dos preguntas en el reloj real:
- *  1. ¿Desde qué orígenes (app, Tile, complicación, botón, notificación) permite
- *     HyperOS arrancar el servicio y, sobre todo, recibir audio real? Si Android
- *     niega el micrófono en segundo plano, AudioRecord entrega solo ceros.
- *  2. ¿El códec Opus del sistema + MediaMuxer generan un Ogg válido?
+ * Estados: IDLE → CAPTURING ⇄ PAUSED (fuera del horario, en modo continuo) → IDLE.
+ * En pausa el servicio sigue vivo (y con su notificación) pero el micrófono está cerrado:
+ * así, al empezar la franja, puede volver a grabar sin que el usuario toque nada.
  */
 class RecorderService : Service() {
 
+    private enum class StopReason { USER, SCHEDULE, ERROR, STORAGE }
+
+    private lateinit var settings: RecorderSettings
+    private lateinit var recordingIntent: RecordingIntent
+    private lateinit var store: FragmentStore
+    private val main = Handler(Looper.getMainLooper())
+
     @Volatile
-    private var stopRequested = false
+    private var stopReason: StopReason? = null
     private var worker: Thread? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var lastChangeElapsed = 0L
+    private var origin = ""
+    private var mode = RecordingMode.BAJO_DEMANDA
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onCreate() {
+        super.onCreate()
+        settings = RecorderSettings(this)
+        recordingIntent = RecordingIntent(this)
+        store = (application as EscribaWearApp).store
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val origin = intent?.getStringExtra(EXTRA_ORIGIN) ?: "desconocido"
+        val phase = RecordingState.phase.value
         when (intent?.action) {
-            ACTION_START -> start(origin)
+            ACTION_START -> if (phase == RecordingState.Phase.IDLE) start(origin)
             ACTION_STOP -> stop(origin)
+            ACTION_RESUME -> resume()
             ACTION_TOGGLE -> {
                 val sinceLastChange = SystemClock.elapsedRealtime() - lastChangeElapsed
-                if (sinceLastChange < TOGGLE_DEBOUNCE_MS) {
-                    AppLog.i(TAG, "Alternancia ignorada: llegó $sinceLastChange ms después de la anterior (origen=$origin)")
-                } else if (worker != null) stop(origin) else start(origin)
+                when {
+                    sinceLastChange < TOGGLE_DEBOUNCE_MS ->
+                        AppLog.i(TAG, "Alternancia ignorada: llegó $sinceLastChange ms después de la anterior (origen=$origin)")
+                    phase == RecordingState.Phase.IDLE -> start(origin)
+                    else -> stop(origin)
+                }
             }
-            else -> AppLog.i(TAG, "Arranque sin acción (¿reinicio del sistema?) desde $origin; no se graba")
+            else -> AppLog.i(TAG, "Arranque sin acción desde $origin; no se graba")
         }
-        if (worker == null) stopSelf()
+        if (RecordingState.phase.value == RecordingState.Phase.IDLE && worker == null) stopSelf()
         return START_NOT_STICKY
     }
 
     private fun start(origin: String) {
-        if (worker != null) return
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             AppLog.e(TAG, "Sin permiso de micrófono; ábrelo desde la app del reloj")
             return
         }
-
-        val startedElapsed = SystemClock.elapsedRealtime()
         try {
             ServiceCompat.startForeground(
                 this,
-                NOTIFICATION_ID,
-                buildNotification(startedElapsed),
+                RecorderNotifications.ONGOING_ID,
+                RecorderNotifications.ongoing(this, "Escriba graba", settings.mode.label, SystemClock.elapsedRealtime()),
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE,
             )
         } catch (e: Exception) {
@@ -87,163 +104,246 @@ class RecorderService : Service() {
             AppLog.e(TAG, "startForeground DENEGADO (origen=$origin)", e)
             return
         }
-        AppLog.i(TAG, "startForeground OK (origen=$origin)")
-
-        wakeLock = (getSystemService(POWER_SERVICE) as PowerManager)
-            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "escriba:recorder")
-            .apply { acquire(MAX_DURATION_MS + 60_000) }
-
-        stopRequested = false
+        RecorderNotifications.cancelInterrupted(this)
+        this.origin = origin
+        mode = settings.mode
+        recordingIntent.markActive(origin)
         lastChangeElapsed = SystemClock.elapsedRealtime()
-        RecordingState.set(this, RecordingState.Active(origin, System.currentTimeMillis(), startedElapsed))
-        worker = Thread({ record(origin) }, "escriba-recorder").also { it.start() }
+        AppLog.i(TAG, "Inicio (origen=$origin, modo=${mode.label}, fuente=${settings.source.label}, VAD=${settings.sensitivity.name.lowercase()})")
+
+        if (mode == RecordingMode.CONTINUO && !settings.window.contains(LocalTime.now())) {
+            enterPause()
+        } else {
+            beginSession()
+        }
     }
 
     private fun stop(origin: String) {
-        if (worker == null) return
-        AppLog.i(TAG, "Parada solicitada (origen=$origin)")
         lastChangeElapsed = SystemClock.elapsedRealtime()
-        stopRequested = true
+        when (RecordingState.phase.value) {
+            RecordingState.Phase.CAPTURING -> {
+                AppLog.i(TAG, "Parada solicitada (origen=$origin)")
+                stopReason = StopReason.USER
+            }
+            RecordingState.Phase.PAUSED -> {
+                AppLog.i(TAG, "Parada en pausa (origen=$origin)")
+                cancelWindowAlarm()
+                finishService()
+            }
+            RecordingState.Phase.IDLE -> Unit
+        }
+    }
+
+    private fun resume() {
+        if (RecordingState.phase.value != RecordingState.Phase.PAUSED) return
+        cancelWindowAlarm()
+        AppLog.i(TAG, "Reanudación por horario")
+        beginSession()
+    }
+
+    private fun beginSession() {
+        val meta = SessionMeta(
+            sessionId = UUID.randomUUID().toString(),
+            profileId = "pruebas",
+            profileHash = "fase2",
+            startMs = System.currentTimeMillis(),
+            origin = origin,
+            mode = mode.name,
+        )
+        store.createSession(meta)
+        val startedElapsed = SystemClock.elapsedRealtime()
+        RecordingState.update {
+            RecordingState.Live(
+                sessionId = meta.sessionId,
+                origin = origin,
+                mode = mode,
+                startedAtMs = meta.startMs,
+                startedElapsedMs = startedElapsed,
+                batteryAtStart = BatteryLog.read(this)?.level,
+            )
+        }
+        RecordingState.setPhase(this, RecordingState.Phase.CAPTURING)
+        RecorderNotifications.update(this, RecorderNotifications.ongoing(this, "Escriba graba", mode.label, startedElapsed))
+
+        wakeLock = (getSystemService(POWER_SERVICE) as PowerManager)
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "escriba:recorder")
+            .apply { acquire(WAKELOCK_TIMEOUT_MS) }
+        stopReason = null
+        BatteryLog.append(this, "inicio", 0)
+        AppLog.i(TAG, "Sesión ${meta.sessionId.take(8)} iniciada")
+        worker = Thread({ capture(meta) }, "escriba-recorder").also { it.start() }
     }
 
     @SuppressLint("MissingPermission") // comprobado en start()
-    private fun record(origin: String) {
-        val dir = File(filesDir, "spike").apply { mkdirs() }
-        val stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))
-        val file = File(dir, "spike-$stamp-$origin.ogg")
-
-        val minBuffer = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
-        val frame = ShortArray(SAMPLE_RATE / 10) // 100 ms
+    private fun capture(meta: SessionMeta) {
+        var reason = StopReason.ERROR
         var recorder: AudioRecord? = null
-        var writer: OpusOggWriter? = null
-        var samples = 0L
-        var nonZero = 0L
-        var peak = 0
-        var sumSquares = 0.0
-
+        var fragmenter: Fragmenter? = null
+        val gate = SpeechGate(sampleRate = SAMPLE_RATE, sensitivity = settings.sensitivity)
         try {
-            recorder = openRecorder(maxOf(minBuffer, frame.size * 2 * 4))
-            writer = OpusOggWriter(file, SAMPLE_RATE, BITRATE)
-            AppLog.i(TAG, "Grabando: fuente=${recorder.audioSource} códec=${writer.codecName} ${SAMPLE_RATE}Hz ${BITRATE / 1000}kbps")
-
+            val captureStartWall = System.currentTimeMillis()
+            fragmenter = Fragmenter(
+                sampleRate = SAMPLE_RATE,
+                wallClockAt = { sample -> captureStartWall + sample * 1000 / SAMPLE_RATE },
+                openWriter = { seq -> store.openWriter(meta.sessionId, seq) },
+                onClosed = { closed ->
+                    val header = store.commit(meta, closed)
+                    val check = OggInspector.inspect(store.audioFile(header))
+                    val speechMs = header.segments.sumOf { it.durationMs }
+                    AppLog.i(TAG, "Fragmento ${header.seq}: ${speechMs / 1000} s de voz en ${header.segments.size} tramos, " +
+                        "${header.sizeBytes / 1024} KB (${kbps(header.sizeBytes, speechMs)} kbps) → ${if (check.ok) "Ogg válido" else "Ogg INVÁLIDO: $check"}")
+                    RecordingState.update { it.copy(fragments = it.fragments + 1) }
+                    if (store.stats().bytes > MAX_STORAGE_BYTES) {
+                        AppLog.e(TAG, "Almacenamiento lleno: se para la grabación")
+                        stopReason = StopReason.STORAGE
+                    }
+                },
+            )
+            recorder = openRecorder(settings.source)
             recorder.startRecording()
-            val deadline = SystemClock.elapsedRealtime() + MAX_DURATION_MS
-            while (!stopRequested && SystemClock.elapsedRealtime() < deadline) {
-                val read = recorder.read(frame, 0, frame.size)
-                if (read <= 0) {
+            AppLog.i(TAG, "Micrófono abierto: fuente=${settings.source.label}")
+
+            val frame = ShortArray(gate.frameSamples)
+            var position = 0L
+            var frames = 0L
+            while (stopReason == null) {
+                val read = recorder.read(frame, 0, frame.size, AudioRecord.READ_BLOCKING)
+                if (read != frame.size) {
                     AppLog.e(TAG, "AudioRecord.read devolvió $read")
                     break
                 }
-                for (i in 0 until read) {
-                    val s = frame[i].toInt()
-                    if (s != 0) nonZero++
-                    val a = abs(s)
-                    if (a > peak) peak = a
-                    sumSquares += s.toDouble() * s
+                gate.process(frame).forEach(fragmenter::onEvent)
+                position += read
+                fragmenter.onTick(position)
+
+                if (++frames % FRAMES_PER_SECOND == 0L) {
+                    val speechPct = (gate.speechFrames * 100 / gate.totalFrames).toInt()
+                    RecordingState.update {
+                        it.copy(speechPct = speechPct, levelDb = gate.lastDb.toInt(), floorDb = gate.floorDb.toInt(), inSpeech = gate.isInSpeech)
+                    }
+                    if (mode == RecordingMode.CONTINUO && !settings.window.contains(LocalTime.now())) {
+                        AppLog.i(TAG, "Fin de la franja ${settings.window}")
+                        stopReason = StopReason.SCHEDULE
+                    }
+                    if (frames % (FRAMES_PER_SECOND * BATTERY_LOG_EVERY_S) == 0L) {
+                        BatteryLog.append(this, "grabando", speechPct)
+                    }
                 }
-                samples += read
-                writer.write(frame, read)
             }
+            reason = stopReason ?: StopReason.ERROR
         } catch (e: Exception) {
             AppLog.e(TAG, "Fallo durante la grabación", e)
         } finally {
             runCatching { recorder?.stop() }
             recorder?.release()
-            runCatching { writer?.close() }.onFailure { AppLog.e(TAG, "Fallo al cerrar el Ogg", it) }
+            runCatching {
+                gate.flush().forEach { fragmenter?.onEvent(it) }
+                fragmenter?.finish()
+            }.onFailure { AppLog.e(TAG, "Fallo al cerrar el último fragmento", it) }
+            store.endSession(meta.sessionId, System.currentTimeMillis(), fragmenter?.fragmentCount ?: 0)
+            val speechPct = if (gate.totalFrames > 0) gate.speechFrames * 100 / gate.totalFrames else 0
+            AppLog.i(TAG, "Sesión ${meta.sessionId.take(8)} cerrada: ${fragmenter?.fragmentCount ?: 0} fragmentos, " +
+                "${gate.totalFrames / FRAMES_PER_SECOND} s escuchados, voz $speechPct %")
         }
-
-        val seconds = samples / SAMPLE_RATE.toDouble()
-        val rms = if (samples > 0) sqrt(sumSquares / samples) else 0.0
-        val verdict = when {
-            samples == 0L -> "SIN AUDIO"
-            nonZero == 0L -> "SOLO CEROS: el sistema bloqueó el micrófono"
-            else -> "AUDIO REAL"
-        }
-        AppLog.i(TAG, "Fin (origen=$origin): %.1f s, pico=%d, rms=%.0f → %s".format(seconds, peak, rms, verdict))
-        if (file.exists()) {
-            AppLog.i(TAG, "${file.name}: ${OggInspector.inspect(file)}")
-        }
-
-        finish()
+        val finalReason = reason
+        main.post { onCaptureEnded(finalReason) }
     }
 
-    @SuppressLint("MissingPermission")
-    private fun openRecorder(bufferBytes: Int): AudioRecord {
-        // VOICE_RECOGNITION entrega audio sin el procesado agresivo de llamadas, mejor para Whisper.
-        for (source in intArrayOf(MediaRecorder.AudioSource.VOICE_RECOGNITION, MediaRecorder.AudioSource.MIC)) {
-            val recorder = AudioRecord(source, SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufferBytes)
-            if (recorder.state == AudioRecord.STATE_INITIALIZED) return recorder
-            recorder.release()
-            AppLog.i(TAG, "Fuente de audio $source no disponible, probando otra")
-        }
-        error("No se pudo inicializar AudioRecord")
-    }
-
-    private fun finish() {
+    private fun onCaptureEnded(reason: StopReason) {
         worker = null
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
-        RecordingState.set(this, null)
+        BatteryLog.append(this, "fin-${reason.name.lowercase()}", RecordingState.live.value.speechPct)
+        when (reason) {
+            StopReason.USER -> finishService()
+            StopReason.SCHEDULE -> enterPause()
+            StopReason.ERROR -> {
+                RecorderNotifications.showInterrupted(this, "Falló el micrófono")
+                finishService()
+            }
+            StopReason.STORAGE -> {
+                RecorderNotifications.showInterrupted(this, "El reloj no tiene espacio")
+                finishService()
+            }
+        }
+    }
+
+    private fun enterPause() {
+        val next = settings.window.nextChange(LocalDateTime.now())
+        val label = when {
+            next == null -> "—"
+            next.toLocalDate() == LocalDateTime.now().toLocalDate() -> "a las " + next.format(DateTimeFormatter.ofPattern("HH:mm"))
+            else -> "mañana a las " + next.format(DateTimeFormatter.ofPattern("HH:mm"))
+        }
+        if (next != null) scheduleWindowAlarm(next.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli())
+        RecordingState.update { RecordingState.Live(origin = origin, mode = mode, pausedUntil = label) }
+        RecordingState.setPhase(this, RecordingState.Phase.PAUSED)
+        RecorderNotifications.update(this, RecorderNotifications.ongoing(this, "Escriba en pausa", "Fuera del horario; vuelve $label", null))
+        AppLog.i(TAG, "En pausa hasta $label (horario ${settings.window})")
+    }
+
+    private fun finishService() {
+        recordingIntent.clear()
+        RecordingState.reset()
+        RecordingState.setPhase(this, RecordingState.Phase.IDLE)
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
+    private fun windowAlarmIntent(): PendingIntent = PendingIntent.getBroadcast(
+        this,
+        0,
+        Intent(this, RecorderReceiver::class.java).setAction(RecorderReceiver.ACTION_WINDOW_START),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+    )
+
+    /** Alarma inexacta: en reposo profundo puede retrasarse unos minutos, que basta para un horario. */
+    private fun scheduleWindowAlarm(atMs: Long) {
+        getSystemService(AlarmManager::class.java).setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, atMs, windowAlarmIntent())
+    }
+
+    private fun cancelWindowAlarm() {
+        getSystemService(AlarmManager::class.java).cancel(windowAlarmIntent())
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun openRecorder(preferred: MicSource): AudioRecord {
+        val minBuffer = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+        val bufferBytes = maxOf(minBuffer, SAMPLE_RATE * 2 / 2) // al menos 0,5 s de margen
+        val sources = listOf(preferred) + MicSource.entries.filter { it != preferred }
+        for (source in sources) {
+            val recorder = AudioRecord(source.audioSource, SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufferBytes)
+            if (recorder.state == AudioRecord.STATE_INITIALIZED) return recorder
+            recorder.release()
+            AppLog.i(TAG, "Fuente ${source.label} no disponible, probando otra")
+        }
+        error("No se pudo inicializar AudioRecord")
+    }
+
     override fun onDestroy() {
-        stopRequested = true
+        // Si el sistema destruye el servicio, el hilo cierra el fragmento abierto. La intención
+        // de grabar se conserva para avisar al usuario cuando el proceso vuelva.
+        if (worker != null) stopReason = StopReason.ERROR
+        wakeLock?.let { if (it.isHeld) it.release() }
         super.onDestroy()
     }
 
-    private fun buildNotification(startedElapsed: Long): android.app.Notification {
-        val manager = getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, getString(R.string.channel_recording), NotificationManager.IMPORTANCE_LOW),
-        )
-
-        val openApp = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE,
-        )
-        val stopIntent = PendingIntent.getService(
-            this, 1, intent(this, ACTION_STOP, "notificacion"), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
-
-        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_mic)
-            .setContentTitle("Escriba está grabando")
-            .setContentText("Toca para abrir")
-            .setContentIntent(openApp)
-            .setOngoing(true)
-            .setCategory(NotificationCompat.CATEGORY_STOPWATCH)
-            .addAction(R.drawable.ic_mic, "Parar", stopIntent)
-
-        // Ongoing Activity: el icono del micrófono aparece en la esfera mientras se graba.
-        OngoingActivity.Builder(applicationContext, NOTIFICATION_ID, builder)
-            .setStaticIcon(R.drawable.ic_mic)
-            .setTouchIntent(openApp)
-            .setStatus(
-                Status.Builder()
-                    .addTemplate("Grabando · #t#")
-                    .addPart("t", Status.StopwatchPart(startedElapsed))
-                    .build(),
-            )
-            .build()
-            .apply(applicationContext)
-
-        return builder.build()
-    }
+    private fun kbps(bytes: Long, ms: Long) = if (ms > 0) bytes * 8 / ms else 0
 
     companion object {
         private const val TAG = "rec"
         const val ACTION_START = "dev.escriba.action.START"
         const val ACTION_STOP = "dev.escriba.action.STOP"
         const val ACTION_TOGGLE = "dev.escriba.action.TOGGLE"
+        const val ACTION_RESUME = "dev.escriba.action.RESUME"
         const val EXTRA_ORIGIN = "origen"
 
-        private const val CHANNEL_ID = "grabacion"
-        private const val NOTIFICATION_ID = 1
-        private const val SAMPLE_RATE = 16_000
-        private const val BITRATE = 24_000
-        /** Tope de seguridad del spike. */
-        private const val MAX_DURATION_MS = 10 * 60_000L
+        const val SAMPLE_RATE = 16_000
+        const val BITRATE = 24_000
+        private const val FRAMES_PER_SECOND = 50L
+        private const val BATTERY_LOG_EVERY_S = 300L
+        private const val WAKELOCK_TIMEOUT_MS = 20 * 60 * 60_000L
+        private const val MAX_STORAGE_BYTES = 1_500L * 1024 * 1024
         /** Dos alternancias más juntas que esto se consideran una sola pulsación duplicada. */
         private const val TOGGLE_DEBOUNCE_MS = 1_500L
 

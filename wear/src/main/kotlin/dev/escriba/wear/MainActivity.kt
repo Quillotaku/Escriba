@@ -10,8 +10,12 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
@@ -22,15 +26,25 @@ import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import androidx.wear.compose.material3.Button
+import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.ListHeader
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.Text
 import dev.escriba.datalayer.AppLog
+import dev.escriba.shared.audio.VadSensitivity
+import dev.escriba.shared.recording.DailyWindow
+import dev.escriba.wear.recorder.BatteryLog
+import dev.escriba.wear.recorder.MicSource
 import dev.escriba.wear.recorder.RecorderService
+import dev.escriba.wear.recorder.RecorderSettings
+import dev.escriba.wear.recorder.RecordingMode
 import dev.escriba.wear.recorder.RecordingState
+import dev.escriba.wear.storage.FragmentStore
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.time.LocalTime
 
-/** Fase 1: pantalla de spikes del reloj. */
+/** Fase 2: control de la grabación, ajustes de prueba y diagnóstico. */
 class MainActivity : ComponentActivity() {
 
     private val permissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
@@ -53,18 +67,22 @@ class MainActivity : ComponentActivity() {
             .filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
         if (missing.isNotEmpty()) permissions.launch(missing.toTypedArray())
 
-        val link = (application as EscribaWearApp).link
+        val app = application as EscribaWearApp
+        val settings = RecorderSettings(this)
         setContent {
             MaterialTheme {
-                SpikeScreen(
+                RecorderScreen(
+                    settings = settings,
+                    store = app.store,
                     toggleRecording = {
                         startForegroundService(RecorderService.intent(this, RecorderService.ACTION_TOGGLE, "app"))
                     },
                     ping = {
-                        runCatching { link.pingNearby() }
+                        runCatching { app.link.pingNearby() }
                             .onSuccess { if (it == 0) AppLog.i("ui", "No hay ningún móvil cercano con Escriba") }
                             .onFailure { AppLog.e("ui", "Fallo al enviar el ping", it) }
                     },
+                    batteryNow = { BatteryLog.read(this)?.level },
                 )
             }
         }
@@ -72,29 +90,126 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun SpikeScreen(toggleRecording: () -> Unit, ping: suspend () -> Unit) {
+private fun RecorderScreen(
+    settings: RecorderSettings,
+    store: FragmentStore,
+    toggleRecording: () -> Unit,
+    ping: suspend () -> Unit,
+    batteryNow: () -> Float?,
+) {
     val scope = rememberCoroutineScope()
-    val active by RecordingState.active.collectAsStateWithLifecycle()
+    val phase by RecordingState.phase.collectAsStateWithLifecycle()
+    val live by RecordingState.live.collectAsStateWithLifecycle()
     val log by AppLog.events.entries.collectAsStateWithLifecycle()
     val listState = rememberScalingLazyListState()
+
+    // Los ajustes solo se pueden cambiar con la grabación parada: el servicio los lee al empezar.
+    val idle = phase == RecordingState.Phase.IDLE
+    var mode by remember { mutableStateOf(settings.mode) }
+    var source by remember { mutableStateOf(settings.source) }
+    var vad by remember { mutableStateOf(settings.sensitivity) }
+
+    var stats by remember { mutableStateOf(store.stats()) }
+    var battery by remember { mutableStateOf(batteryNow()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            stats = store.stats()
+            battery = batteryNow()
+            delay(5_000)
+        }
+    }
 
     ScalingLazyColumn(
         modifier = Modifier.fillMaxSize(),
         state = listState,
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 32.dp),
     ) {
-        item { ListHeader { Text(if (active != null) "● Grabando" else "Escriba") } }
+        item {
+            ListHeader {
+                Text(
+                    when (phase) {
+                        RecordingState.Phase.IDLE -> "Escriba"
+                        RecordingState.Phase.CAPTURING -> if (live.inSpeech) "● Voz" else "● Escuchando"
+                        RecordingState.Phase.PAUSED -> "En pausa"
+                    },
+                )
+            }
+        }
+        item {
+            val lines = buildList {
+                when (phase) {
+                    RecordingState.Phase.CAPTURING -> {
+                        add("Voz ${live.speechPct} % · ${live.fragments} fragmentos")
+                        add("Nivel ${live.levelDb} dB · suelo ${live.floorDb} dB")
+                        val start = live.batteryAtStart
+                        val now = battery
+                        val hours = (System.currentTimeMillis() - live.startedAtMs) / 3_600_000.0
+                        if (start != null && now != null && hours > 0.05) {
+                            add("Batería %.1f %%/h".format((start - now) / hours))
+                        }
+                    }
+                    RecordingState.Phase.PAUSED -> add("Vuelve ${live.pausedUntil}")
+                    RecordingState.Phase.IDLE -> Unit
+                }
+                add("Pendientes: ${stats.fragments} (${stats.bytes / 1024} KB)")
+                battery?.let { add("Batería ${it.toInt()} %") }
+            }
+            Text(lines.joinToString("\n"), fontSize = 12.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+        }
         item {
             Button(onClick = toggleRecording, modifier = Modifier.fillMaxWidth()) {
-                Text(if (active != null) "Parar" else "Grabar")
+                Text(if (idle) "Grabar" else "Parar")
+            }
+        }
+        item { ListHeader { Text("Ajustes") } }
+        item {
+            SettingButton("Modo: ${mode.label}", enabled = idle) {
+                mode = RecordingMode.entries[(mode.ordinal + 1) % RecordingMode.entries.size]
+                settings.mode = mode
             }
         }
         item {
-            Button(onClick = { scope.launch { ping() } }, modifier = Modifier.fillMaxWidth()) {
-                Text("Ping al móvil")
+            SettingButton("Fuente: ${source.label}", enabled = idle) {
+                source = MicSource.entries[(source.ordinal + 1) % MicSource.entries.size]
+                settings.source = source
             }
         }
-        item { ListHeader { Text("Registro") } }
+        item {
+            SettingButton("VAD: ${vad.name.lowercase()}", enabled = idle) {
+                vad = VadSensitivity.entries[(vad.ordinal + 1) % VadSensitivity.entries.size]
+                settings.sensitivity = vad
+            }
+        }
+        item {
+            Text("Horario continuo: ${settings.window}", fontSize = 11.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+        }
+        item { ListHeader { Text("Diagnóstico") } }
+        item {
+            SettingButton("Ping al móvil", enabled = true) { scope.launch { ping() } }
+        }
+        item {
+            SettingButton("Horario de prueba", enabled = idle) {
+                // Franja que empieza dentro de 1 min y dura 2: sirve para probar pausa y reanudación.
+                val now = LocalTime.now().withSecond(0).withNano(0)
+                settings.window = DailyWindow(now.plusMinutes(1), now.plusMinutes(3))
+                mode = RecordingMode.CONTINUO
+                settings.mode = mode
+                AppLog.i("ui", "Horario de prueba: ${settings.window}, modo continuo")
+            }
+        }
+        item {
+            SettingButton("Horario normal", enabled = idle) {
+                settings.window = DailyWindow.DEFAULT
+                AppLog.i("ui", "Horario restaurado: ${settings.window}")
+            }
+        }
+        item {
+            SettingButton("Borrar pendientes", enabled = idle) {
+                store.deleteAll()
+                stats = store.stats()
+                AppLog.i("ui", "Fragmentos pendientes borrados")
+            }
+        }
         items(log.takeLast(40).reversed()) { entry ->
             Text(
                 text = entry.toString(),
@@ -104,5 +219,17 @@ private fun SpikeScreen(toggleRecording: () -> Unit, ping: suspend () -> Unit) {
                 modifier = Modifier.fillMaxWidth(),
             )
         }
+    }
+}
+
+@Composable
+private fun SettingButton(label: String, enabled: Boolean, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        colors = ButtonDefaults.filledTonalButtonColors(),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(label, fontSize = 13.sp)
     }
 }

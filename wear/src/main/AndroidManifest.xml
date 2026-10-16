@@ -63,10 +63,15 @@
             </intent-filter>
         </activity>
 
+        <!--
+            La abre el Tile («Más…»). Tiene que estar exportada porque el Tile lo dibuja el sistema,
+            pero solo puede lanzarla quien tenga el permiso de enlazar Tiles: el propio sistema.
+        -->
         <activity
             android:name=".ProfilePickerActivity"
             android:excludeFromRecents="true"
             android:exported="true"
+            android:permission="com.google.android.wearable.permission.BIND_TILE_PROVIDER"
             android:taskAffinity="dev.escriba.perfiles" />
 
         <service

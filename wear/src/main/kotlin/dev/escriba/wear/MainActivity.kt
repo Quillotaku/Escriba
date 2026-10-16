@@ -64,6 +64,24 @@ class MainActivity : ComponentActivity() {
 
     private val permissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
         AppLog.i("ui", "Permisos: " + result.entries.joinToString { "${it.key.substringAfterLast('.')}=${it.value}" })
+        micBlocked.value = micPermanentlyDenied()
+    }
+
+    /** Sin micrófono no hay Escriba: si se denegó para siempre, la única salida son los Ajustes. */
+    private val micBlocked = mutableStateOf(false)
+
+    private fun micGranted() = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+
+    private fun micPermanentlyDenied() = !micGranted() && !shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO)
+
+    private fun openAppSettings() {
+        runCatching { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null))) }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Puede volver de Ajustes con el permiso concedido.
+        if (micGranted()) micBlocked.value = false
     }
 
     override fun onStart() {
@@ -98,6 +116,10 @@ class MainActivity : ComponentActivity() {
         val settings = RecorderSettings(this)
         setContent {
             MaterialTheme {
+                if (micBlocked.value) {
+                    MicPermissionScreen(onOpenSettings = ::openAppSettings)
+                    return@MaterialTheme
+                }
                 RecorderScreen(
                     settings = settings,
                     store = app.store,
@@ -360,6 +382,25 @@ private fun ScalingLazyListScope.LinkSection(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun MicPermissionScreen(onOpenSettings: () -> Unit) {
+    ScalingLazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 40.dp),
+    ) {
+        item { ListHeader { Text("Sin micrófono") } }
+        item {
+            Text(
+                "Escriba necesita el micrófono para grabar y se denegó el permiso. Actívalo en Ajustes → Permisos.",
+                fontSize = 12.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        item { Button(onClick = onOpenSettings, modifier = Modifier.fillMaxWidth()) { Text("Abrir ajustes") } }
     }
 }
 

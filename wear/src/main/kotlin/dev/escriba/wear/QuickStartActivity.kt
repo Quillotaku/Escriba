@@ -22,7 +22,9 @@ class QuickStartActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         handled = savedInstanceState?.getBoolean(KEY_HANDLED) ?: false
-        origin = intent.getStringExtra(RecorderService.EXTRA_ORIGIN) ?: ORIGIN_BUTTON
+        // La actividad está exportada (icono del lanzador y botón físico), así que cualquier app
+        // podría lanzarla con extras inventados: el origen solo se acepta si es uno de los nuestros.
+        origin = intent.getStringExtra(RecorderService.EXTRA_ORIGIN)?.takeIf { it in KNOWN_ORIGINS } ?: ORIGIN_BUTTON
         val extras = intent.extras?.keySet()?.joinToString().orEmpty().ifEmpty { "ninguno" }
         AppLog.i(TAG, "Abierta: origen=$origin extras=[$extras] restaurada=${savedInstanceState != null}")
     }
@@ -55,5 +57,6 @@ class QuickStartActivity : Activity() {
         const val TAG = "quick"
         const val KEY_HANDLED = "handled"
         const val ORIGIN_BUTTON = "boton"
+        val KNOWN_ORIGINS = setOf("boton", "complicacion", "reanudar", "tile-actividad")
     }
 }

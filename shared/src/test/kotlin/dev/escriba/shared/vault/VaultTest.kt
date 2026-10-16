@@ -240,6 +240,21 @@ class NotesTest {
     }
 
     @Test
+    fun `la transcripcion se agrupa en parrafos por pausas`() {
+        fun line(s: Int, e: Int, text: String) = dev.escriba.shared.transcription.TranscriptLine(ms(10, 0, s), ms(10, 0, e), text)
+        val text = NoteRenderer.transcript(
+            listOf(
+                line(0, 3, "Luego había que darle"),
+                line(3, 5, "una lavada de cara"),
+                line(5, 6, "a la interfaz."),
+                line(15, 18, "Por ahora va que chuta."), // pausa de 9 s: párrafo nuevo
+            ),
+            zone,
+        )
+        assertEquals("**10:00:00** Luego había que darle una lavada de cara a la interfaz.\n\n**10:00:15** Por ahora va que chuta.", text)
+    }
+
+    @Test
     fun `nombres de archivo seguros`() {
         assertEquals("Acta cliente proyecto Q4", NoteRenderer.sanitize("Acta: cliente/proyecto? [Q4]"))
     }

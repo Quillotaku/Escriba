@@ -14,6 +14,7 @@ import dev.escriba.shared.vault.NoteData
 import dev.escriba.shared.vault.NoteRenderer
 import dev.escriba.shared.vault.OggConcat
 import dev.escriba.shared.vault.Profile
+import dev.escriba.shared.transcription.TranscriptLine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
@@ -39,15 +40,13 @@ class NoteWriter(
 
     data class Outcome(val notes: List<String>, val profile: Profile)
 
-    suspend fun process(sessionId: String, profileOverride: String? = null): Outcome = mutex.withLock {
+    suspend fun process(sessionId: String, profileOverride: String? = null, transcript: List<TranscriptLine>? = null): Outcome = mutex.withLock {
         val dao = db.sessions()
         try {
             check(vault.isConfigured) { "Elige la bóveda en la pestaña «Bóveda»" }
             val session = dao.session(sessionId) ?: error("La sesión no existe")
             val set = profiles.reload() ?: error("No se pudo leer la configuración de la bóveda")
-            val profile = (profileOverride ?: session.profileId).let { set.profiles[it] }
-                ?: set.defaultProfile?.also { AppLog.i(TAG, "Perfil «${session.profileId}» no encontrado; se usa «${it.id}»") }
-                ?: error("No hay ningún perfil válido en la bóveda")
+            val profile = resolveProfile(set, session.profileId, profileOverride)
             val zone = runCatching { ZoneId.of(set.config.timeZone) }.getOrDefault(ZoneId.systemDefault())
 
             val fragments = dao.fragments(sessionId)
@@ -62,7 +61,13 @@ class NoteWriter(
 
             val written = ArrayList<String>()
             for (conversation in conversations) {
-                val base = NoteData(sessionId, conversation, profile, zone)
+                // Las frases de esta conversación: las que empiezan dentro de su intervalo.
+                val lines = transcript?.filter { it.wallStartMs >= conversation.startMs - 1_000 && it.wallStartMs <= conversation.endMs + 1_000 }
+                val base = NoteData(
+                    sessionId, conversation, profile, zone,
+                    transcript = lines?.let { if (it.isEmpty()) "_Sin voz reconocible._" else NoteRenderer.transcript(it, zone) },
+                    status = if (transcript != null) "transcrita" else "pendiente",
+                )
                 val folder = NoteRenderer.folder(profile.folder, conversation.startMs, zone)
                 val baseName = NoteRenderer.baseName(base)
 
@@ -96,6 +101,12 @@ class NoteWriter(
             throw e
         }
     }
+
+    /** El perfil con el que se escribe: el pedido, el de la grabación o, si no existe, el de por defecto. */
+    fun resolveProfile(set: dev.escriba.shared.vault.ProfileSet, recorded: String, override: String?): Profile =
+        (override ?: recorded).let { set.profiles[it] }
+            ?: set.defaultProfile?.also { AppLog.i(TAG, "Perfil «$recorded» no encontrado; se usa «${it.id}»") }
+            ?: error("No hay ningún perfil válido en la bóveda")
 
     /** Ruta definitiva de la nota, sin pisar ediciones del usuario ni notas ajenas. */
     private fun choosePath(previous: NoteEntity?, wanted: String): String {

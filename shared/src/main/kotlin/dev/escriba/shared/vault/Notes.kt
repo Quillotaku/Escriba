@@ -152,6 +152,36 @@ object NoteRenderer {
         return Frontmatter.note(properties(data), body)
     }
 
+    /**
+     * Transcripción en párrafos: Whisper corta en cada pausa pequeña («el», «del reloj» sueltos),
+     * así que las frases seguidas se unen y solo se pone la hora al principio de cada párrafo.
+     * Un párrafo nuevo empieza tras una pausa de [pauseMs], al cambiar de hablante o al pasar
+     * de [maxChars] caracteres.
+     */
+    fun transcript(
+        lines: List<dev.escriba.shared.transcription.TranscriptLine>,
+        zone: ZoneId,
+        pauseMs: Long = 4_000,
+        maxChars: Int = 400,
+    ): String {
+        val time = DateTimeFormatter.ofPattern("HH:mm:ss")
+        val paragraphs = ArrayList<Pair<dev.escriba.shared.transcription.TranscriptLine, StringBuilder>>()
+        var lastEnd = Long.MIN_VALUE
+        for (l in lines) {
+            val current = paragraphs.lastOrNull()
+            val startNew = current == null ||
+                l.wallStartMs - lastEnd >= pauseMs ||
+                l.speaker != current.first.speaker ||
+                current.second.length + l.text.length > maxChars
+            if (startNew) paragraphs += l to StringBuilder(l.text) else current!!.second.append(' ').append(l.text)
+            lastEnd = l.wallEndMs
+        }
+        return paragraphs.joinToString("\n\n") { (first, text) ->
+            val t = at(first.wallStartMs, zone).format(time)
+            (first.speaker?.let { "**$t · $it** " } ?: "**$t** ") + text
+        }
+    }
+
     /** Mientras no hay transcripción: los tramos de voz con su hora real. */
     private fun placeholderTranscript(data: NoteData): String =
         data.conversation.segments.joinToString("\n") { s ->

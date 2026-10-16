@@ -36,6 +36,7 @@ android {
 
 dependencies {
     implementation(project(":datalayer"))
+    implementation(project(":native"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

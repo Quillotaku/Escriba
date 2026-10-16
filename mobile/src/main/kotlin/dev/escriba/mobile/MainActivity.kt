@@ -1,6 +1,9 @@
 package dev.escriba.mobile
 
+import android.Manifest
 import android.annotation.SuppressLint
+import android.content.pm.PackageManager
+import androidx.activity.result.contract.ActivityResultContracts
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -52,8 +55,9 @@ import dev.escriba.datalayer.AppLog
 import dev.escriba.datalayer.Peer
 import dev.escriba.datalayer.PairingState
 import dev.escriba.mobile.data.SessionEntity
+import dev.escriba.mobile.ui.ModelsScreen
 import dev.escriba.mobile.ui.VaultScreen
-import dev.escriba.mobile.vault.ProcessWorker
+import dev.escriba.mobile.processing.ProcessWorker
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -77,9 +81,15 @@ class MainActivity : ComponentActivity() {
         super.onStop()
     }
 
+    private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // La notificación del procesado (transcripción) necesita permiso desde Android 13.
+        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
         val app = application as EscribaApp
         setContent {
             MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) {
@@ -87,7 +97,7 @@ class MainActivity : ComponentActivity() {
                 Scaffold(
                     bottomBar = {
                         NavigationBar {
-                            listOf("Sesiones", "Bóveda", "Reloj", "Batería", "Registro").forEachIndexed { i, label ->
+                            listOf("Sesiones", "Bóveda", "Modelos", "Reloj", "Batería", "Registro").forEachIndexed { i, label ->
                                 NavigationBarItem(selected = tab == i, onClick = { tab = i }, icon = {}, label = { Text(label) })
                             }
                         }
@@ -97,8 +107,9 @@ class MainActivity : ComponentActivity() {
                         when (tab) {
                             0 -> SessionsScreen(app)
                             1 -> VaultScreen(app)
-                            2 -> LinkScreen(app)
-                            3 -> BatteryGuideScreen(
+                            2 -> ModelsScreen(app)
+                            3 -> LinkScreen(app)
+                            4 -> BatteryGuideScreen(
                                 isExempt = { getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName) },
                                 requestExemption = ::requestBatteryExemption,
                                 openAppSettings = ::openAppSettings,
@@ -175,13 +186,13 @@ private fun SessionsScreen(app: EscribaApp) {
                     if (s.audioDeletedAtMs != null) Text("Audio ya borrado del móvil (retención)", style = MaterialTheme.typography.bodySmall)
                     Row {
                         if (s.isComplete) {
-                            TextButton(onClick = { ProcessWorker.enqueue(app, s.id) }) { Text(if (notes.isEmpty()) "Escribir nota" else "Reescribir") }
+                            TextButton(onClick = { ProcessWorker.enqueue(app, s.id, now = true) }) { Text(if (notes.isEmpty()) "Procesar ahora" else "Reprocesar") }
                             Box {
                                 TextButton(onClick = { pickProfileFor = s.id }) { Text("Con otro perfil…") }
                                 DropdownMenu(expanded = pickProfileFor == s.id, onDismissRequest = { pickProfileFor = null }) {
                                     profileSet?.profiles?.values?.forEach { p ->
                                         DropdownMenuItem(text = { Text(p.name) }, onClick = {
-                                            ProcessWorker.enqueue(app, s.id, p.id)
+                                            ProcessWorker.enqueue(app, s.id, p.id, now = true)
                                             pickProfileFor = null
                                         })
                                     }

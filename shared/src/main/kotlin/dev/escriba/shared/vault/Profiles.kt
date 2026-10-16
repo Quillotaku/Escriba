@@ -74,7 +74,7 @@ data class GlobalConfig(
     val clientsFolder: String = "Clientes",
     val attachmentsFolder: String = "Adjuntos/Escriba",
     val defaultProfile: String = "casual",
-    val defaultWhisper: String = "large-v3-turbo-q5_0",
+    val defaultWhisper: String = "large-v3-turbo-q8_0",
     val phoneAudioRetentionDays: Int = 7,
 )
 

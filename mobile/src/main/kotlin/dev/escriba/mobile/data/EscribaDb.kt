@@ -74,6 +74,18 @@ data class NoteEntity(
     val audioDeletedAtMs: Long? = null,
 )
 
+/** Transcripción de una sesión completa: las frases con su hora real, de todas sus conversaciones. */
+@Entity(tableName = "transcripts")
+data class TranscriptEntity(
+    @PrimaryKey val sessionId: String,
+    val model: String,
+    val language: String,
+    val linesJson: String,
+    val audioMs: Long,
+    val transcribeMs: Long,
+    val createdAtMs: Long,
+)
+
 @Dao
 interface SessionDao {
     @Query("SELECT * FROM sessions ORDER BY startMs DESC")
@@ -140,15 +152,25 @@ interface SessionDao {
     @Query("DELETE FROM notes WHERE sessionId = :sessionId")
     suspend fun deleteNotes(sessionId: String)
 
+    @Query("SELECT * FROM transcripts WHERE sessionId = :sessionId")
+    suspend fun transcript(sessionId: String): TranscriptEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertTranscript(transcript: TranscriptEntity)
+
+    @Query("DELETE FROM transcripts WHERE sessionId = :sessionId")
+    suspend fun deleteTranscript(sessionId: String)
+
     @Transaction
     suspend fun delete(sessionId: String) {
         deleteFragments(sessionId)
         deleteNotes(sessionId)
+        deleteTranscript(sessionId)
         deleteSession(sessionId)
     }
 }
 
-@Database(entities = [SessionEntity::class, FragmentEntity::class, NoteEntity::class], version = 2, exportSchema = false)
+@Database(entities = [SessionEntity::class, FragmentEntity::class, NoteEntity::class, TranscriptEntity::class], version = 3, exportSchema = false)
 abstract class EscribaDb : RoomDatabase() {
     abstract fun sessions(): SessionDao
 
@@ -168,9 +190,20 @@ abstract class EscribaDb : RoomDatabase() {
             }
         }
 
+        /** Fase 4 → 6: transcripciones. */
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS transcripts (sessionId TEXT NOT NULL PRIMARY KEY, model TEXT NOT NULL, " +
+                        "language TEXT NOT NULL, linesJson TEXT NOT NULL, audioMs INTEGER NOT NULL, transcribeMs INTEGER NOT NULL, " +
+                        "createdAtMs INTEGER NOT NULL)",
+                )
+            }
+        }
+
         fun open(context: Context): EscribaDb =
             Room.databaseBuilder(context.applicationContext, EscribaDb::class.java, "escriba.db")
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build()
     }
 }

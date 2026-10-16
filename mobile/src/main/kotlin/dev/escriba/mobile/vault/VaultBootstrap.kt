@@ -32,7 +32,7 @@ object VaultBootstrap {
             horario: "07:30-23:30"
             zona_horaria: Europe/Madrid
             perfil_por_defecto: casual
-            whisper_por_defecto: large-v3-turbo-q5_0
+            whisper_por_defecto: large-v3-turbo-q8_0
             nota_diaria_carpeta: Diario
             nota_diaria_formato: YYYY-MM-DD
             carpeta_personas: Personas

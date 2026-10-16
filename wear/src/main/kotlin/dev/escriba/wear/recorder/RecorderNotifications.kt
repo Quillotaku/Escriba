@@ -44,6 +44,10 @@ object RecorderNotifications {
             context, 1, RecorderService.intent(context, RecorderService.ACTION_STOP, "notificacion"),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
+        val switchNext = PendingIntent.getService(
+            context, 3, RecorderService.switchIntent(context, RecorderService.PROFILE_NEXT, "notificacion"),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
         val builder = NotificationCompat.Builder(context, CHANNEL_RECORDING)
             .setSmallIcon(R.drawable.ic_mic)
             .setContentTitle(title)
@@ -53,6 +57,7 @@ object RecorderNotifications {
             .setSilent(true)
             .setCategory(NotificationCompat.CATEGORY_STOPWATCH)
             .addAction(R.drawable.ic_mic, "Parar", stop)
+            .addAction(R.drawable.ic_mic, "Cambiar perfil", switchNext)
 
         // Ongoing Activity: el icono del micrófono aparece en la esfera mientras el servicio vive.
         val status = Status.Builder().apply {

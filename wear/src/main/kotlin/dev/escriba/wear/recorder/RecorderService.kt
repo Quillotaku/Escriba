@@ -45,7 +45,7 @@ import java.util.UUID
  */
 class RecorderService : Service() {
 
-    private enum class StopReason { USER, SCHEDULE, ERROR, STORAGE }
+    private enum class StopReason { USER, SCHEDULE, ERROR, STORAGE, SWITCH }
 
     private lateinit var settings: RecorderSettings
     private lateinit var recordingIntent: RecordingIntent
@@ -63,6 +63,8 @@ class RecorderService : Service() {
     private var sensitivity = VadSensitivity.MEDIA
     private var window = DailyWindow.DEFAULT
     private var profile: WatchProfile? = null
+    /** Perfil al que cambiar cuando termine de cerrarse la sesión actual. */
+    private var pendingSwitch: String? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -81,10 +83,13 @@ class RecorderService : Service() {
             ACTION_START -> if (phase == RecordingState.Phase.IDLE) start(origin)
             ACTION_STOP -> stop(origin)
             ACTION_RESUME -> resume()
+            ACTION_SWITCH -> switchTo(intent.getStringExtra(EXTRA_PROFILE) ?: PROFILE_NEXT, origin)
             ACTION_TOGGLE -> {
                 val sinceLastChange = SystemClock.elapsedRealtime() - lastChangeElapsed
                 when {
-                    sinceLastChange < TOGGLE_DEBOUNCE_MS ->
+                    // Solo con el servicio en marcha: estando parado, la orden llega con
+                    // startForegroundService y hay que atenderla (o Android cierra la app).
+                    phase != RecordingState.Phase.IDLE && sinceLastChange < TOGGLE_DEBOUNCE_MS ->
                         AppLog.i(TAG, "Alternancia ignorada: llegó $sinceLastChange ms después de la anterior (origen=$origin)")
                     phase == RecordingState.Phase.IDLE -> start(origin)
                     else -> stop(origin)
@@ -116,19 +121,53 @@ class RecorderService : Service() {
         }
         RecorderNotifications.cancelInterrupted(this)
         this.origin = origin
-        // El perfil elegido manda; los ajustes locales solo se usan si aún no hay perfiles.
+        applyProfile()
+        recordingIntent.markActive(origin)
+        lastChangeElapsed = SystemClock.elapsedRealtime()
+        AppLog.i(TAG, "Inicio (origen=$origin, perfil=${profile?.name ?: "sin perfiles"}, modo=${mode.label}, fuente=${settings.source.label}, VAD=${sensitivity.name.lowercase()})")
+        captureOrPause()
+    }
+
+    /** El perfil elegido manda; los ajustes locales solo se usan si aún no hay perfiles. */
+    private fun applyProfile() {
         profile = profiles.selected.value
         mode = profiles.modeOf(profile, settings.mode)
         sensitivity = profiles.vadOf(profile, settings.sensitivity)
         window = settings.windowOverride ?: profiles.scheduleOr(settings.window)
-        recordingIntent.markActive(origin)
-        lastChangeElapsed = SystemClock.elapsedRealtime()
-        AppLog.i(TAG, "Inicio (origen=$origin, perfil=${profile?.name ?: "sin perfiles"}, modo=${mode.label}, fuente=${settings.source.label}, VAD=${sensitivity.name.lowercase()})")
+    }
 
-        if (mode == RecordingMode.CONTINUO && !window.contains(LocalTime.now())) {
-            enterPause()
-        } else {
-            beginSession()
+    private fun captureOrPause() {
+        if (mode == RecordingMode.CONTINUO && !window.contains(LocalTime.now())) enterPause() else beginSession()
+    }
+
+    /**
+     * Cambiar de perfil cierra la sesión en curso y abre otra con el perfil nuevo: cada sesión
+     * tiene un único perfil, que es el que decide carpeta, plantilla y procesado en el móvil.
+     */
+    private fun switchTo(requested: String, origin: String) {
+        val target = if (requested == PROFILE_NEXT) profiles.nextId() else requested
+        if (target == null) {
+            AppLog.i(TAG, "No hay perfiles a los que cambiar")
+            return
+        }
+        when (RecordingState.phase.value) {
+            RecordingState.Phase.IDLE -> {
+                profiles.select(target)
+                start(origin)
+            }
+            RecordingState.Phase.CAPTURING -> {
+                if (target == profile?.id) return
+                AppLog.i(TAG, "Cambio de perfil a «$target» (origen=$origin): se cierra la sesión actual")
+                pendingSwitch = target
+                stopReason = StopReason.SWITCH
+            }
+            RecordingState.Phase.PAUSED -> {
+                cancelWindowAlarm()
+                profiles.select(target)
+                applyProfile()
+                AppLog.i(TAG, "Cambio de perfil en pausa a «${profile?.name}»")
+                captureOrPause()
+            }
         }
     }
 
@@ -173,11 +212,13 @@ class RecorderService : Service() {
                 mode = mode,
                 startedAtMs = meta.startMs,
                 startedElapsedMs = startedElapsed,
+                profileName = profile?.name,
+                profileColor = profile?.color,
                 batteryAtStart = BatteryLog.read(this)?.level,
             )
         }
         RecordingState.setPhase(this, RecordingState.Phase.CAPTURING)
-        RecorderNotifications.update(this, RecorderNotifications.ongoing(this, "Escriba graba", mode.label, startedElapsed))
+        RecorderNotifications.update(this, RecorderNotifications.ongoing(this, "Escriba graba", profile?.name ?: mode.label, startedElapsed))
 
         wakeLock = (getSystemService(POWER_SERVICE) as PowerManager)
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "escriba:recorder")
@@ -273,6 +314,13 @@ class RecorderService : Service() {
         when (reason) {
             StopReason.USER -> finishService()
             StopReason.SCHEDULE -> enterPause()
+            StopReason.SWITCH -> {
+                pendingSwitch?.let(profiles::select)
+                pendingSwitch = null
+                applyProfile()
+                AppLog.i(TAG, "Nueva sesión con el perfil «${profile?.name}»")
+                captureOrPause()
+            }
             StopReason.ERROR -> {
                 RecorderNotifications.showInterrupted(this, "Falló el micrófono")
                 finishService()
@@ -292,7 +340,7 @@ class RecorderService : Service() {
             else -> "mañana a las " + next.format(DateTimeFormatter.ofPattern("HH:mm"))
         }
         if (next != null) scheduleWindowAlarm(next.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli())
-        RecordingState.update { RecordingState.Live(origin = origin, mode = mode, pausedUntil = label) }
+        RecordingState.update { RecordingState.Live(origin = origin, mode = mode, pausedUntil = label, profileName = profile?.name, profileColor = profile?.color) }
         RecordingState.setPhase(this, RecordingState.Phase.PAUSED)
         RecorderNotifications.update(this, RecorderNotifications.ongoing(this, "Escriba en pausa", "Fuera del horario; vuelve $label", null))
         AppLog.i(TAG, "En pausa hasta $label (horario $window)")
@@ -352,7 +400,10 @@ class RecorderService : Service() {
         const val ACTION_STOP = "dev.escriba.action.STOP"
         const val ACTION_TOGGLE = "dev.escriba.action.TOGGLE"
         const val ACTION_RESUME = "dev.escriba.action.RESUME"
+        const val ACTION_SWITCH = "dev.escriba.action.SWITCH"
         const val EXTRA_ORIGIN = "origen"
+        const val EXTRA_PROFILE = "perfil"
+        const val PROFILE_NEXT = "_siguiente"
 
         const val SAMPLE_RATE = 16_000
         const val BITRATE = 24_000
@@ -365,5 +416,25 @@ class RecorderService : Service() {
 
         fun intent(context: Context, action: String, origin: String): Intent =
             Intent(context, RecorderService::class.java).setAction(action).putExtra(EXTRA_ORIGIN, origin)
+
+        fun switchIntent(context: Context, profileId: String, origin: String): Intent =
+            intent(context, ACTION_SWITCH, origin).putExtra(EXTRA_PROFILE, profileId)
+
+        /**
+         * Envía una orden al servicio con la llamada adecuada:
+         *  - parado: `startForegroundService`, porque la orden lo arranca y el servicio llamará a
+         *    `startForeground` (solo una orden que empiece a grabar tiene sentido);
+         *  - grabando o en pausa: `startService`. El servicio ya está en primer plano, y si se le
+         *    manda `startForegroundService` para pararlo, Android exige un `startForeground` que
+         *    nunca llega y mata la app (error visto en la fase 5 al parar desde el Tile).
+         */
+        fun send(context: Context, intent: Intent) {
+            val running = RecordingState.phase.value != RecordingState.Phase.IDLE
+            when {
+                running -> context.startService(intent)
+                intent.action == ACTION_STOP -> AppLog.i(TAG, "Orden de parar sin grabación en curso; se ignora")
+                else -> context.startForegroundService(intent)
+            }
+        }
     }
 }

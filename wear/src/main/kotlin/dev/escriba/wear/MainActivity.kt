@@ -102,7 +102,7 @@ class MainActivity : ComponentActivity() {
                     settings = settings,
                     store = app.store,
                     toggleRecording = {
-                        startForegroundService(RecorderService.intent(this, RecorderService.ACTION_TOGGLE, "app"))
+                        RecorderService.send(this, RecorderService.intent(this, RecorderService.ACTION_TOGGLE, "app"))
                     },
                     ping = {
                         runCatching { app.link.pingNearby() }

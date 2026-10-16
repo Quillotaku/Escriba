@@ -5,7 +5,7 @@ import android.content.Context
 import androidx.wear.tiles.TileService
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import dev.escriba.wear.complication.RecordingComplicationService
-import dev.escriba.wear.tile.SpikeTileService
+import dev.escriba.wear.tile.EscribaTileService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -28,6 +28,8 @@ object RecordingState {
         val floorDb: Int = 0,
         val inSpeech: Boolean = false,
         val batteryAtStart: Float? = null,
+        val profileName: String? = null,
+        val profileColor: String? = null,
     )
 
     private val _phase = MutableStateFlow(Phase.IDLE)
@@ -55,7 +57,7 @@ object RecordingState {
     /** Pide al sistema que vuelva a pintar el Tile y la complicación. */
     fun refreshSurfaces(context: Context) {
         val app = context.applicationContext
-        runCatching { TileService.getUpdater(app).requestUpdate(SpikeTileService::class.java) }
+        runCatching { TileService.getUpdater(app).requestUpdate(EscribaTileService::class.java) }
         runCatching {
             ComplicationDataSourceUpdateRequester
                 .create(app, ComponentName(app, RecordingComplicationService::class.java))

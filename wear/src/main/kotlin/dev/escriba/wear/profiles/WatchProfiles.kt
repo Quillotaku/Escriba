@@ -11,6 +11,7 @@ import dev.escriba.shared.recording.DailyWindow
 import dev.escriba.shared.vault.ProfileList
 import dev.escriba.shared.vault.WatchProfile
 import dev.escriba.wear.recorder.RecordingMode
+import dev.escriba.wear.recorder.RecordingState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -20,7 +21,8 @@ import kotlinx.coroutines.flow.StateFlow
  */
 class WatchProfiles(context: Context, private val link: DataLayerLink) {
 
-    private val prefs = context.applicationContext.getSharedPreferences("perfiles", Context.MODE_PRIVATE)
+    private val appContext = context.applicationContext
+    private val prefs = appContext.getSharedPreferences("perfiles", Context.MODE_PRIVATE)
 
     private val _list = MutableStateFlow(prefs.getString(KEY_LIST, null)?.let { runCatching { EscribaJson.decodeFromString<ProfileList>(it) }.getOrNull() })
     val list: StateFlow<ProfileList?> = _list
@@ -35,6 +37,7 @@ class WatchProfiles(context: Context, private val link: DataLayerLink) {
             _list.value = received
             _selected.value = resolveSelected(received, _selected.value?.id)
             AppLog.i(TAG, "Perfiles recibidos: ${received.profiles.joinToString { it.name }} · horario ${received.schedule}")
+            RecordingState.refreshSurfaces(appContext)
         }
     }
 
@@ -42,14 +45,25 @@ class WatchProfiles(context: Context, private val link: DataLayerLink) {
         val profile = _list.value?.profiles?.firstOrNull { it.id == id } ?: return
         prefs.edit().putString(KEY_SELECTED, id).apply()
         _selected.value = profile
+        RecordingState.refreshSurfaces(appContext)
     }
 
-    /** Pasa al siguiente perfil (favoritos primero, como los ordena el móvil). */
-    fun selectNext() {
+    /** El perfil siguiente al elegido (favoritos primero, como los ordena el móvil). */
+    fun nextId(): String? {
         val profiles = _list.value?.profiles.orEmpty()
-        if (profiles.isEmpty()) return
+        if (profiles.isEmpty()) return null
         val index = profiles.indexOfFirst { it.id == _selected.value?.id }
-        select(profiles[(index + 1) % profiles.size].id)
+        return profiles[(index + 1) % profiles.size].id
+    }
+
+    fun selectNext() {
+        nextId()?.let(::select)
+    }
+
+    /** Perfiles para el Tile: los favoritos y, si sobran huecos, los demás. */
+    fun forTile(slots: Int): List<WatchProfile> {
+        val profiles = _list.value?.profiles.orEmpty()
+        return (profiles.filter { it.favorite } + profiles.filterNot { it.favorite }).take(slots)
     }
 
     suspend fun requestFromPhone(): Boolean =

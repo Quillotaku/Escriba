@@ -40,7 +40,7 @@ class QuickStartActivity : Activity() {
             startActivity(Intent(this, MainActivity::class.java))
         } else {
             runCatching {
-                startForegroundService(RecorderService.intent(this, RecorderService.ACTION_TOGGLE, origin))
+                RecorderService.send(this, RecorderService.intent(this, RecorderService.ACTION_TOGGLE, origin))
             }.onFailure { AppLog.e(TAG, "No se pudo arrancar el servicio (origen=$origin)", it) }
         }
         finish()

@@ -36,6 +36,8 @@ class Inbox(
     private val root: File,
     private val link: DataLayerLink,
     private val db: EscribaDb,
+    /** Se llama cuando una sesión tiene todos sus fragmentos y su final: es el momento de escribir las notas. */
+    private val onSessionComplete: (sessionId: String) -> Unit,
 ) {
     private val mutex = Mutex()
 
@@ -133,8 +135,9 @@ class Inbox(
 
     private suspend fun reportIfComplete(sessionId: String) {
         val s = db.sessions().session(sessionId) ?: return
-        if (s.isComplete) {
+        if (s.isComplete && s.processedAtMs == null) {
             AppLog.i(TAG, "Sesión ${sessionId.take(8)} completa: ${s.receivedFragments} fragmentos, ${s.speechMs / 1000} s de voz")
+            onSessionComplete(sessionId)
         }
     }
 

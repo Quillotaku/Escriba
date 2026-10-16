@@ -20,6 +20,10 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import dev.escriba.datalayer.AppLog
 import dev.escriba.shared.audio.SpeechGate
+import dev.escriba.shared.audio.VadSensitivity
+import dev.escriba.shared.recording.DailyWindow
+import dev.escriba.shared.vault.WatchProfile
+import dev.escriba.wear.profiles.WatchProfiles
 import dev.escriba.shared.recording.Fragmenter
 import dev.escriba.wear.EscribaWearApp
 import dev.escriba.wear.storage.FragmentStore
@@ -46,6 +50,7 @@ class RecorderService : Service() {
     private lateinit var settings: RecorderSettings
     private lateinit var recordingIntent: RecordingIntent
     private lateinit var store: FragmentStore
+    private lateinit var profiles: WatchProfiles
     private val main = Handler(Looper.getMainLooper())
 
     @Volatile
@@ -55,6 +60,9 @@ class RecorderService : Service() {
     private var lastChangeElapsed = 0L
     private var origin = ""
     private var mode = RecordingMode.BAJO_DEMANDA
+    private var sensitivity = VadSensitivity.MEDIA
+    private var window = DailyWindow.DEFAULT
+    private var profile: WatchProfile? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -63,6 +71,7 @@ class RecorderService : Service() {
         settings = RecorderSettings(this)
         recordingIntent = RecordingIntent(this)
         store = (application as EscribaWearApp).store
+        profiles = (application as EscribaWearApp).profiles
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -96,7 +105,7 @@ class RecorderService : Service() {
             ServiceCompat.startForeground(
                 this,
                 RecorderNotifications.ONGOING_ID,
-                RecorderNotifications.ongoing(this, "Escriba graba", settings.mode.label, SystemClock.elapsedRealtime()),
+                RecorderNotifications.ongoing(this, "Escriba graba", profiles.selected.value?.name ?: settings.mode.label, SystemClock.elapsedRealtime()),
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE,
             )
         } catch (e: Exception) {
@@ -107,12 +116,16 @@ class RecorderService : Service() {
         }
         RecorderNotifications.cancelInterrupted(this)
         this.origin = origin
-        mode = settings.mode
+        // El perfil elegido manda; los ajustes locales solo se usan si aún no hay perfiles.
+        profile = profiles.selected.value
+        mode = profiles.modeOf(profile, settings.mode)
+        sensitivity = profiles.vadOf(profile, settings.sensitivity)
+        window = settings.windowOverride ?: profiles.scheduleOr(settings.window)
         recordingIntent.markActive(origin)
         lastChangeElapsed = SystemClock.elapsedRealtime()
-        AppLog.i(TAG, "Inicio (origen=$origin, modo=${mode.label}, fuente=${settings.source.label}, VAD=${settings.sensitivity.name.lowercase()})")
+        AppLog.i(TAG, "Inicio (origen=$origin, perfil=${profile?.name ?: "sin perfiles"}, modo=${mode.label}, fuente=${settings.source.label}, VAD=${sensitivity.name.lowercase()})")
 
-        if (mode == RecordingMode.CONTINUO && !settings.window.contains(LocalTime.now())) {
+        if (mode == RecordingMode.CONTINUO && !window.contains(LocalTime.now())) {
             enterPause()
         } else {
             beginSession()
@@ -145,8 +158,8 @@ class RecorderService : Service() {
     private fun beginSession() {
         val meta = SessionMeta(
             sessionId = UUID.randomUUID().toString(),
-            profileId = "pruebas",
-            profileHash = "fase2",
+            profileId = profile?.id ?: "sin-perfil",
+            profileHash = profile?.hash ?: "",
             startMs = System.currentTimeMillis(),
             origin = origin,
             mode = mode.name,
@@ -180,7 +193,7 @@ class RecorderService : Service() {
         var reason = StopReason.ERROR
         var recorder: AudioRecord? = null
         var fragmenter: Fragmenter? = null
-        val gate = SpeechGate(sampleRate = SAMPLE_RATE, sensitivity = settings.sensitivity)
+        val gate = SpeechGate(sampleRate = SAMPLE_RATE, sensitivity = sensitivity)
         try {
             val captureStartWall = System.currentTimeMillis()
             fragmenter = Fragmenter(
@@ -223,8 +236,8 @@ class RecorderService : Service() {
                     RecordingState.update {
                         it.copy(speechPct = speechPct, levelDb = gate.lastDb.toInt(), floorDb = gate.floorDb.toInt(), inSpeech = gate.isInSpeech)
                     }
-                    if (mode == RecordingMode.CONTINUO && !settings.window.contains(LocalTime.now())) {
-                        AppLog.i(TAG, "Fin de la franja ${settings.window}")
+                    if (mode == RecordingMode.CONTINUO && !window.contains(LocalTime.now())) {
+                        AppLog.i(TAG, "Fin de la franja $window")
                         stopReason = StopReason.SCHEDULE
                     }
                     if (frames % (FRAMES_PER_SECOND * BATTERY_LOG_EVERY_S) == 0L) {
@@ -272,7 +285,7 @@ class RecorderService : Service() {
     }
 
     private fun enterPause() {
-        val next = settings.window.nextChange(LocalDateTime.now())
+        val next = window.nextChange(LocalDateTime.now())
         val label = when {
             next == null -> "—"
             next.toLocalDate() == LocalDateTime.now().toLocalDate() -> "a las " + next.format(DateTimeFormatter.ofPattern("HH:mm"))
@@ -282,7 +295,7 @@ class RecorderService : Service() {
         RecordingState.update { RecordingState.Live(origin = origin, mode = mode, pausedUntil = label) }
         RecordingState.setPhase(this, RecordingState.Phase.PAUSED)
         RecorderNotifications.update(this, RecorderNotifications.ongoing(this, "Escriba en pausa", "Fuera del horario; vuelve $label", null))
-        AppLog.i(TAG, "En pausa hasta $label (horario ${settings.window})")
+        AppLog.i(TAG, "En pausa hasta $label (horario $window)")
     }
 
     private fun finishService() {

@@ -113,3 +113,7 @@ data class PairReveal(val publicKey: String, val nonce: String)
 
 @Serializable
 data class PairConfirm(val mac: String)
+
+/** El reloj pide la lista de perfiles (al arrancar o si no tiene ninguna). */
+@Serializable
+data class ProfilesRequest(val currentHash: String? = null)

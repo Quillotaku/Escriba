@@ -52,6 +52,11 @@ import dev.escriba.datalayer.AppLog
 import dev.escriba.datalayer.Peer
 import dev.escriba.datalayer.PairingState
 import dev.escriba.mobile.data.SessionEntity
+import dev.escriba.mobile.ui.VaultScreen
+import dev.escriba.mobile.vault.ProcessWorker
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -82,7 +87,7 @@ class MainActivity : ComponentActivity() {
                 Scaffold(
                     bottomBar = {
                         NavigationBar {
-                            listOf("Sesiones", "Reloj", "Batería", "Registro").forEachIndexed { i, label ->
+                            listOf("Sesiones", "Bóveda", "Reloj", "Batería", "Registro").forEachIndexed { i, label ->
                                 NavigationBarItem(selected = tab == i, onClick = { tab = i }, icon = {}, label = { Text(label) })
                             }
                         }
@@ -91,8 +96,9 @@ class MainActivity : ComponentActivity() {
                     Column(Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
                         when (tab) {
                             0 -> SessionsScreen(app)
-                            1 -> LinkScreen(app)
-                            2 -> BatteryGuideScreen(
+                            1 -> VaultScreen(app)
+                            2 -> LinkScreen(app)
+                            3 -> BatteryGuideScreen(
                                 isExempt = { getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName) },
                                 requestExemption = ::requestBatteryExemption,
                                 openAppSettings = ::openAppSettings,
@@ -132,6 +138,10 @@ private fun SessionsScreen(app: EscribaApp) {
     val sessions by app.db.sessions().observeSessions().collectAsStateWithLifecycle(initialValue = emptyList())
     val scope = rememberCoroutineScope()
     var toDelete by remember { mutableStateOf<SessionEntity?>(null) }
+    var pickProfileFor by remember { mutableStateOf<String?>(null) }
+    val allNotes by app.db.sessions().observeNotes().collectAsStateWithLifecycle(initialValue = emptyList())
+    val notesBySession = allNotes.groupBy { it.sessionId }
+    val profileSet by app.profiles.set.collectAsStateWithLifecycle()
 
     Text("Sesiones recibidas", style = MaterialTheme.typography.titleLarge)
     Spacer(Modifier.padding(4.dp))
@@ -155,8 +165,31 @@ private fun SessionsScreen(app: EscribaApp) {
                                 else -> "en curso"
                             },
                     )
-                    Text("Perfil: ${s.profileId}", style = MaterialTheme.typography.bodySmall)
-                    TextButton(onClick = { toDelete = s }) { Text("Borrar") }
+                    Text("Perfil: ${s.processedProfileId ?: s.profileId}", style = MaterialTheme.typography.bodySmall)
+                    val notes = notesBySession[s.id].orEmpty()
+                    when {
+                        s.processError != null -> Text("Error: ${s.processError}", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                        notes.isNotEmpty() -> notes.forEach { Text("📝 ${it.path}", style = MaterialTheme.typography.bodySmall) }
+                        s.isComplete -> Text("Pendiente de escribir en la bóveda", style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (s.audioDeletedAtMs != null) Text("Audio ya borrado del móvil (retención)", style = MaterialTheme.typography.bodySmall)
+                    Row {
+                        if (s.isComplete) {
+                            TextButton(onClick = { ProcessWorker.enqueue(app, s.id) }) { Text(if (notes.isEmpty()) "Escribir nota" else "Reescribir") }
+                            Box {
+                                TextButton(onClick = { pickProfileFor = s.id }) { Text("Con otro perfil…") }
+                                DropdownMenu(expanded = pickProfileFor == s.id, onDismissRequest = { pickProfileFor = null }) {
+                                    profileSet?.profiles?.values?.forEach { p ->
+                                        DropdownMenuItem(text = { Text(p.name) }, onClick = {
+                                            ProcessWorker.enqueue(app, s.id, p.id)
+                                            pickProfileFor = null
+                                        })
+                                    }
+                                }
+                            }
+                        }
+                        TextButton(onClick = { toDelete = s }) { Text("Borrar") }
+                    }
                 }
             }
         }
@@ -166,7 +199,7 @@ private fun SessionsScreen(app: EscribaApp) {
         AlertDialog(
             onDismissRequest = { toDelete = null },
             title = { Text("¿Borrar la sesión?") },
-            text = { Text("Se borrará su audio del móvil. No se puede deshacer.") },
+            text = { Text("Se borrará su audio del móvil. Las notas ya escritas en la bóveda no se tocan. No se puede deshacer.") },
             confirmButton = {
                 TextButton(onClick = {
                     scope.launch { app.inbox.delete(s.id) }

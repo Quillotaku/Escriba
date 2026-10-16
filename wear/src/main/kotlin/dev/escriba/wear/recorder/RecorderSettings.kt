@@ -35,6 +35,11 @@ class RecorderSettings(context: Context) {
         get() = prefs.getString(KEY_WINDOW, null)?.let(DailyWindow::parse) ?: DailyWindow.DEFAULT
         set(value) = prefs.edit().putString(KEY_WINDOW, value.toString().replace('–', '-')).apply()
 
+    /** Franja de prueba (botón de diagnóstico): tiene prioridad sobre la de la configuración. */
+    var windowOverride: DailyWindow?
+        get() = prefs.getString(KEY_WINDOW_OVERRIDE, null)?.let(DailyWindow::parse)
+        set(value) = prefs.edit().putString(KEY_WINDOW_OVERRIDE, value?.toString()?.replace('–', '-')).apply()
+
     private inline fun <reified E : Enum<E>> enumOr(name: String?, default: E): E =
         name?.let { runCatching { enumValueOf<E>(it) }.getOrNull() } ?: default
 
@@ -43,6 +48,7 @@ class RecorderSettings(context: Context) {
         const val KEY_SOURCE = "fuente"
         const val KEY_VAD = "vad"
         const val KEY_WINDOW = "horario"
+        const val KEY_WINDOW_OVERRIDE = "horario_prueba"
     }
 }
 

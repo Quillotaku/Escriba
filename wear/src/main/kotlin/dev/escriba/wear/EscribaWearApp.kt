@@ -11,6 +11,11 @@ import dev.escriba.wear.recorder.RecordingIntent
 import dev.escriba.wear.storage.FragmentStore
 import dev.escriba.wear.transfer.UploadWorker
 import dev.escriba.wear.transfer.Uploader
+import dev.escriba.wear.profiles.WatchProfiles
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import java.io.File
 
 class EscribaWearApp : Application() {
@@ -27,6 +32,11 @@ class EscribaWearApp : Application() {
     lateinit var uploader: Uploader
         private set
 
+    lateinit var profiles: WatchProfiles
+        private set
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     override fun onCreate() {
         super.onCreate()
         AppLog.attach(this)
@@ -34,8 +44,11 @@ class EscribaWearApp : Application() {
         store = FragmentStore(File(filesDir, "fragments"), RecorderService.SAMPLE_RATE, RecorderService.BITRATE)
         pairing = PairingCoordinator(link, isWatch = true, deviceName = android.os.Build.MODEL)
         uploader = Uploader(this, link, store)
+        profiles = WatchProfiles(this, link)
         recoverAfterCrash()
         UploadWorker.ensurePeriodic(this)
+        // Sin perfiles todavía (recién instalado o emparejado): se piden al móvil.
+        if (profiles.list.value == null) scope.launch { profiles.requestFromPhone() }
     }
 
     /**

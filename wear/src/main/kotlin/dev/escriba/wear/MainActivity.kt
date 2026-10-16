@@ -1,6 +1,8 @@
 package dev.escriba.wear
 
 import android.Manifest
+import androidx.compose.ui.graphics.Color
+import dev.escriba.wear.profiles.WatchProfiles
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.net.Uri
@@ -108,6 +110,7 @@ class MainActivity : ComponentActivity() {
                             .onFailure { AppLog.e("ui", "Fallo al enviar el ping", it) }
                     },
                     batteryNow = { BatteryLog.read(this)?.level },
+                    profiles = app.profiles,
                     link = {
                         LinkSection(
                             app = app,
@@ -128,6 +131,7 @@ private fun RecorderScreen(
     toggleRecording: () -> Unit,
     ping: suspend () -> Unit,
     batteryNow: () -> Float?,
+    profiles: WatchProfiles,
     link: ScalingLazyListScope.() -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -190,16 +194,47 @@ private fun RecorderScreen(
             Text(lines.joinToString("\n"), fontSize = 12.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         }
         item {
+            val list by profiles.list.collectAsStateWithLifecycle()
+            val selected by profiles.selected.collectAsStateWithLifecycle()
+            val current = selected
+            if (current == null) {
+                Text(
+                    if (list == null) "Sin perfiles: empareja el móvil y elige la bóveda allí." else "La bóveda no tiene perfiles válidos.",
+                    fontSize = 11.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            } else {
+                Button(
+                    onClick = { profiles.selectNext() },
+                    enabled = idle,
+                    colors = ButtonDefaults.buttonColors(containerColor = parseColor(current.color)),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("${current.name} · ${if (current.mode == "continuo") "continuo" else "bajo demanda"}", fontSize = 13.sp)
+                }
+            }
+        }
+        item {
             Button(onClick = toggleRecording, modifier = Modifier.fillMaxWidth()) {
                 Text(if (idle) "Grabar" else "Parar")
             }
         }
         link()
         item { ListHeader { Text("Ajustes") } }
-        item {
-            SettingButton("Modo: ${mode.label}", enabled = idle) {
-                mode = RecordingMode.entries[(mode.ordinal + 1) % RecordingMode.entries.size]
-                settings.mode = mode
+        if (profiles.list.value == null) {
+            // Sin perfiles del móvil, el modo y el VAD se eligen aquí.
+            item {
+                SettingButton("Modo: ${mode.label}", enabled = idle) {
+                    mode = RecordingMode.entries[(mode.ordinal + 1) % RecordingMode.entries.size]
+                    settings.mode = mode
+                }
+            }
+            item {
+                SettingButton("VAD: ${vad.name.lowercase()}", enabled = idle) {
+                    vad = VadSensitivity.entries[(vad.ordinal + 1) % VadSensitivity.entries.size]
+                    settings.sensitivity = vad
+                }
             }
         }
         item {
@@ -209,32 +244,34 @@ private fun RecorderScreen(
             }
         }
         item {
-            SettingButton("VAD: ${vad.name.lowercase()}", enabled = idle) {
-                vad = VadSensitivity.entries[(vad.ordinal + 1) % VadSensitivity.entries.size]
-                settings.sensitivity = vad
-            }
-        }
-        item {
-            Text("Horario continuo: ${settings.window}", fontSize = 11.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+            val override = settings.windowOverride
+            Text(
+                "Horario continuo: ${override ?: profiles.scheduleOr(settings.window)}" + if (override != null) " (prueba)" else "",
+                fontSize = 11.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
         item { ListHeader { Text("Diagnóstico") } }
         item {
             SettingButton("Ping al móvil", enabled = true) { scope.launch { ping() } }
         }
         item {
+            SettingButton("Pedir perfiles al móvil", enabled = true) { scope.launch { profiles.requestFromPhone() } }
+        }
+        item {
             SettingButton("Horario de prueba", enabled = idle) {
-                // Franja que empieza dentro de 1 min y dura 2: sirve para probar pausa y reanudación.
+                // Franja que empieza dentro de 1 min y dura 2, para probar pausa y reanudación
+                // (con un perfil en modo continuo).
                 val now = LocalTime.now().withSecond(0).withNano(0)
-                settings.window = DailyWindow(now.plusMinutes(1), now.plusMinutes(3))
-                mode = RecordingMode.CONTINUO
-                settings.mode = mode
-                AppLog.i("ui", "Horario de prueba: ${settings.window}, modo continuo")
+                settings.windowOverride = DailyWindow(now.plusMinutes(1), now.plusMinutes(3))
+                AppLog.i("ui", "Horario de prueba: ${settings.windowOverride}")
             }
         }
         item {
             SettingButton("Horario normal", enabled = idle) {
-                settings.window = DailyWindow.DEFAULT
-                AppLog.i("ui", "Horario restaurado: ${settings.window}")
+                settings.windowOverride = null
+                AppLog.i("ui", "Horario de prueba desactivado")
             }
         }
         item {
@@ -325,6 +362,9 @@ private fun ScalingLazyListScope.LinkSection(
         }
     }
 }
+
+private fun parseColor(hex: String): Color =
+    runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrDefault(Color.DarkGray)
 
 @Composable
 private fun SettingButton(label: String, enabled: Boolean, onClick: () -> Unit) {

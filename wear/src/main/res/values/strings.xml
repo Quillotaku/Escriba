@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Escriba</string>
+    <string name="quick_start_label">Escriba: grabar</string>
+    <string name="channel_recording">Grabación</string>
+</resources>

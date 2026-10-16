@@ -1,0 +1,21 @@
+.gradle/
+.kotlin/
+build/
+local.properties
+*.iml
+.idea/
+.DS_Store
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+*.keystore
+*.jks
+# Modelos y audio de prueba: nunca al repositorio
+*.gguf
+*.onnx
+*.bin
+*.ogg
+*.wav
+spike-out/

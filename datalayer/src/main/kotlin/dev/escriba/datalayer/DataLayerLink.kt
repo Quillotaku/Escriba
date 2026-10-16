@@ -1,0 +1,135 @@
+package dev.escriba.datalayer
+
+import android.content.Context
+import com.google.android.gms.wearable.CapabilityClient
+import com.google.android.gms.wearable.MessageClient
+import com.google.android.gms.wearable.MessageEvent
+import com.google.android.gms.wearable.Node
+import com.google.android.gms.wearable.Wearable
+import dev.escriba.shared.Ping
+import dev.escriba.shared.Pong
+import dev.escriba.shared.Protocol
+import dev.escriba.shared.fromWire
+import dev.escriba.shared.toWire
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
+import java.util.UUID
+
+/** Nodo remoto tal y como lo ve la Data Layer. */
+data class Peer(
+    val id: String,
+    val name: String,
+    val nearby: Boolean,
+    val hasEscriba: Boolean,
+)
+
+/**
+ * Enlace con el otro dispositivo por la Wearable Data Layer.
+ *
+ * Regla de privacidad: solo se envía a nodos con `isNearby == true`, es decir,
+ * conectados directamente (Bluetooth). Si el único camino es la nube de Google,
+ * no se envía nada.
+ */
+class DataLayerLink(
+    context: Context,
+    /** "wear" o "mobile"; viaja en los mensajes para el diagnóstico. */
+    private val origin: String,
+    /** Capacidad que anuncia la app del otro extremo. */
+    private val peerCapability: String,
+) {
+    private val appContext = context.applicationContext
+    private val nodes = Wearable.getNodeClient(appContext)
+    private val capabilities = Wearable.getCapabilityClient(appContext)
+    private val messages = Wearable.getMessageClient(appContext)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    /** El mismo mensaje puede llegar por las dos vías; se procesa una sola vez. */
+    private val seen = LinkedHashSet<String>()
+
+    /** Todos los nodos conectados, marcando cuáles tienen Escriba instalada. */
+    suspend fun peers(): List<Peer> {
+        val connected = nodes.connectedNodes.await()
+        val withApp = capabilities
+            .getCapability(peerCapability, CapabilityClient.FILTER_REACHABLE)
+            .await()
+            .nodes
+            .map(Node::getId)
+            .toSet()
+        return connected.map { Peer(it.id, it.displayName, it.isNearby, it.id in withApp) }
+    }
+
+    /** Envía un ping a cada nodo cercano con Escriba. Devuelve a cuántos se envió. */
+    suspend fun pingNearby(): Int {
+        val all = peers()
+        AppLog.i(TAG, "Nodos: " + all.joinToString { "${it.name}(cercano=${it.nearby}, app=${it.hasEscriba})" }.ifEmpty { "ninguno" })
+        val targets = all.filter { it.nearby && it.hasEscriba }
+        all.filter { it.hasEscriba && !it.nearby }.forEach {
+            AppLog.i(TAG, "No se envía a ${it.name}: no está conectado directamente")
+        }
+        for (peer in targets) {
+            val ping = Ping(id = UUID.randomUUID().toString().take(8), sentAtMs = System.currentTimeMillis(), origin = origin)
+            messages.sendMessage(peer.id, Protocol.PATH_PING, ping.toWire()).await()
+            AppLog.i(TAG, "Ping ${ping.id} → ${peer.name}")
+        }
+        return targets.size
+    }
+
+    /**
+     * Escucha directa mientras la app está en pantalla. Sirve de respaldo y de diagnóstico:
+     * si un mensaje llega por aquí pero nunca por el servicio, el sistema del fabricante está
+     * impidiendo que GMS despierte la app en segundo plano.
+     */
+    private val foregroundListener = MessageClient.OnMessageReceivedListener { event ->
+        scope.launch {
+            runCatching { onMessage(event, via = "app abierta") }
+                .onFailure { AppLog.e(TAG, "Fallo al procesar ${event.path}", it) }
+        }
+    }
+
+    fun startForegroundListening() {
+        messages.addListener(foregroundListener)
+    }
+
+    fun stopForegroundListening() {
+        messages.removeListener(foregroundListener)
+    }
+
+    /** Punto de entrada común: el WearableListenerService y la escucha en primer plano. */
+    suspend fun onMessage(event: MessageEvent, via: String) {
+        val key = "${event.sourceNodeId}:${event.requestId}"
+        synchronized(seen) {
+            if (!seen.add(key)) return
+            if (seen.size > 200) seen.remove(seen.first())
+        }
+        AppLog.i(TAG, "Recibido ${event.path.removePrefix(Protocol.PATH_PREFIX)} vía $via")
+        when (event.path) {
+            Protocol.PATH_PING -> {
+                val ping: Ping = event.data.fromWire()
+                AppLog.i(TAG, "Ping ${ping.id} recibido de ${ping.origin}")
+                if (!isNearby(event.sourceNodeId)) {
+                    AppLog.i(TAG, "No se responde: el emisor no está conectado directamente")
+                    return
+                }
+                val pong = Pong(ping.id, ping.sentAtMs, System.currentTimeMillis(), origin)
+                messages.sendMessage(event.sourceNodeId, Protocol.PATH_PONG, pong.toWire()).await()
+            }
+
+            Protocol.PATH_PONG -> {
+                val pong: Pong = event.data.fromWire()
+                val rtt = System.currentTimeMillis() - pong.pingSentAtMs
+                AppLog.i(TAG, "Pong ${pong.id} de ${pong.origin}: ida y vuelta $rtt ms")
+            }
+
+            else -> AppLog.i(TAG, "Mensaje no reconocido: ${event.path}")
+        }
+    }
+
+    private suspend fun isNearby(nodeId: String): Boolean =
+        nodes.connectedNodes.await().any { it.id == nodeId && it.isNearby }
+
+    private companion object {
+        const val TAG = "link"
+    }
+}

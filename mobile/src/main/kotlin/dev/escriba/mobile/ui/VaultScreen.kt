@@ -64,6 +64,9 @@ fun VaultScreen(app: EscribaApp) {
 
     LaunchedEffect(tree) {
         if (tree != null) {
+            withContext(Dispatchers.IO) { runCatching { VaultBootstrap.repair(app.vault) } }.getOrNull()
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { AppLog.i("boveda", "Reparado: ${it.joinToString()}") }
             missing = withContext(Dispatchers.IO) { VaultBootstrap.missing(app.vault) }
             app.profiles.reload()
         }

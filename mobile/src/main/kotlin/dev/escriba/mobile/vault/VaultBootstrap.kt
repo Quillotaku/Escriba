@@ -13,6 +13,15 @@ object VaultBootstrap {
     const val TEMPLATES_DIR = "$CONFIG_DIR/plantillas"
     const val CONFIG_FILE = "$CONFIG_DIR/escriba.md"
     const val ERRORS_FILE = "$CONFIG_DIR/errores.md"
+    const val DAILY_TEMPLATE = "$TEMPLATES_DIR/diaria.md"
+
+    /**
+     * Plantilla de la nota diaria. Se monta línea a línea a propósito: con la consulta interpolada
+     * dentro de un texto sangrado, `trimIndent` no quitaba la sangría y Obsidian lo mostraba
+     * como bloque de código en vez de ejecutar Dataview (error de la primera versión).
+     */
+    private fun dailyTemplate(): String =
+        listOf("# {{date}}", "", "## Grabaciones", DailyNote.DATAVIEW_QUERY, "", "## Notas", "").joinToString("\n")
 
     val folders = listOf("Diario", "Personas", "Proyectos", "Clientes", "Grabaciones", "Adjuntos/Escriba", PROFILES_DIR, TEMPLATES_DIR)
 
@@ -126,14 +135,7 @@ object VaultBootstrap {
             {{transcripcion}}
         """.trimIndent() + "\n",
 
-        "$TEMPLATES_DIR/diaria.md" to """
-            # {{date}}
-
-            ## Grabaciones
-            ${DailyNote.DATAVIEW_QUERY}
-
-            ## Notas
-        """.trimIndent() + "\n",
+        DAILY_TEMPLATE to dailyTemplate(),
 
         "$CONFIG_DIR/LEEME.md" to """
             # Escriba
@@ -162,6 +164,20 @@ object VaultBootstrap {
             `{{participantes}}`. El frontmatter lo genera siempre Escriba.
         """.trimIndent() + "\n",
     )
+
+    /**
+     * Corrige archivos que creó una versión anterior con errores, solo si siguen tal cual se
+     * crearon (si el usuario los ha cambiado, no se tocan). Devuelve lo que se ha reparado.
+     */
+    fun repair(vault: VaultAccess): List<String> {
+        val repaired = ArrayList<String>()
+        val daily = vault.readText(DAILY_TEMPLATE)
+        if (daily != null && daily.startsWith("            # {{date}}") && "```dataview" in daily && daily.lines().size <= 12) {
+            vault.writeText(DAILY_TEMPLATE, dailyTemplate())
+            repaired += DAILY_TEMPLATE
+        }
+        return repaired
+    }
 
     /** Lo que falta por crear en la bóveda. */
     fun missing(vault: VaultAccess): List<String> =

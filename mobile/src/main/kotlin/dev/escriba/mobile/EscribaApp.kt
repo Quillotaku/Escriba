@@ -11,6 +11,7 @@ import dev.escriba.mobile.vault.ProcessWorker
 import dev.escriba.mobile.vault.ProfileRepository
 import dev.escriba.mobile.vault.RetentionWorker
 import dev.escriba.mobile.vault.VaultAccess
+import dev.escriba.mobile.vault.VaultBootstrap
 import dev.escriba.shared.Protocol
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -59,6 +60,7 @@ class EscribaApp : Application() {
         // Al abrir la app: perfiles al día (y al reloj, si han cambiado) y sesiones que se quedaron sin procesar.
         scope.launch {
             if (!vault.isConfigured) return@launch
+            runCatching { VaultBootstrap.repair(vault) }.getOrNull()?.takeIf { it.isNotEmpty() }?.let { AppLog.i("boveda", "Reparado: ${it.joinToString()}") }
             runCatching { profiles.reload(); profiles.syncToWatch() }
             db.sessions().unprocessed().filter { it.isComplete }.forEach { ProcessWorker.enqueue(this@EscribaApp, it.id) }
         }

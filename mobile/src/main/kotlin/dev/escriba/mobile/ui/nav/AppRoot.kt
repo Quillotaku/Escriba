@@ -35,11 +35,14 @@ import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.ui.NavDisplay
 import dev.escriba.mobile.EscribaApp
-import dev.escriba.mobile.ui.ModelsScreen
-import dev.escriba.mobile.ui.VaultScreen
 import dev.escriba.mobile.ui.sessions.SessionDetailScreen
 import dev.escriba.mobile.ui.sessions.SessionsScreen
 import dev.escriba.mobile.ui.settings.BatteryPage
+import dev.escriba.mobile.ui.settings.BenchmarkPage
+import dev.escriba.mobile.ui.settings.ModelsPage
+import dev.escriba.mobile.ui.settings.ProfileEditorPage
+import dev.escriba.mobile.ui.settings.StoragePage
+import dev.escriba.mobile.ui.settings.VaultPage
 import dev.escriba.mobile.ui.settings.LogPage
 import dev.escriba.mobile.ui.settings.SettingsPage
 import dev.escriba.mobile.ui.settings.SettingsScreen
@@ -57,6 +60,7 @@ sealed interface Route : NavKey {
     data object Settings : Route
     data class Session(val id: String, val focus: Int) : Route
     data class Setting(val page: SettingsPage) : Route
+    data class ProfileEdit(val id: String) : Route
 }
 
 private enum class Tab(val root: Route, val label: String, val icon: ImageVector) {
@@ -102,11 +106,14 @@ private fun title(route: Route): String? = when (route) {
     Route.Sessions -> "Sesiones"
     Route.Settings -> "Ajustes"
     is Route.Session -> "Sesión"
+    is Route.ProfileEdit -> "Perfil"
     is Route.Setting -> when (route.page) {
         SettingsPage.WATCH -> "Reloj"
         SettingsPage.VAULT -> "Bóveda y perfiles"
         SettingsPage.VOICES -> "Voces registradas"
         SettingsPage.MODELS -> "Modelos"
+        SettingsPage.BENCHMARK -> "Pruebas de rendimiento"
+        SettingsPage.STORAGE -> "Almacenamiento"
         SettingsPage.BATTERY -> "Batería"
         SettingsPage.LOG -> "Registro"
     }
@@ -166,12 +173,15 @@ fun AppRoot(app: EscribaApp, actions: SystemActions) {
                 entry<Route.Sessions> { SessionsScreen(app, padding) { id, i -> nav.push(Route.Session(id, i)) } }
                 entry<Route.Settings> { SettingsScreen(app, padding) { page -> nav.push(Route.Setting(page)) } }
                 entry<Route.Session> { r -> SessionDetailScreen(app, r.id, r.focus, padding) { nav.back() } }
+                entry<Route.ProfileEdit> { r -> ProfileEditorPage(app, r.id, padding) { nav.back() } }
                 entry<Route.Setting> { r ->
                     when (r.page) {
                         SettingsPage.WATCH -> WatchPage(app, padding)
-                        SettingsPage.VAULT -> Padded(padding) { VaultScreen(app) }
+                        SettingsPage.VAULT -> VaultPage(app, padding) { id -> nav.push(Route.ProfileEdit(id)) }
                         SettingsPage.VOICES -> VoicesPage(app, padding)
-                        SettingsPage.MODELS -> Padded(padding) { ModelsScreen(app) }
+                        SettingsPage.MODELS -> ModelsPage(app, padding) { nav.push(Route.Setting(SettingsPage.BENCHMARK)) }
+                        SettingsPage.BENCHMARK -> BenchmarkPage(app, padding)
+                        SettingsPage.STORAGE -> StoragePage(app, padding)
                         SettingsPage.BATTERY -> BatteryPage(actions, padding)
                         SettingsPage.LOG -> LogPage(padding)
                     }
@@ -179,10 +189,4 @@ fun AppRoot(app: EscribaApp, actions: SystemActions) {
             },
         )
     }
-}
-
-/** Para las pantallas antiguas que se desplazan solas: solo les pone los márgenes. */
-@Composable
-private fun Padded(padding: PaddingValues, content: @Composable () -> Unit) {
-    Box(Modifier.fillMaxSize().padding(padding).padding(horizontal = Space.s4)) { content() }
 }

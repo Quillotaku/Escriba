@@ -273,9 +273,10 @@ object ProfileLoader {
         }
 
         fun oneOf(key: String, allowed: Set<String>, default: String): String {
-            val v = text(key)?.lowercase() ?: return default
-            if (v in allowed) return v
-            errors += "$key: «$v» no es válido (${allowed.joinToString()})"
+            val raw = text(key) ?: return default
+            // Sin distinguir mayúsculas: «yyyy-mm-dd» es «YYYY-MM-DD». Se devuelve la forma canónica.
+            allowed.firstOrNull { it.equals(raw.trim(), ignoreCase = true) }?.let { return it }
+            errors += "$key: «$raw» no es válido (${allowed.joinToString()})"
             return default
         }
 
@@ -287,7 +288,8 @@ object ProfileLoader {
         fun days(key: String, default: Int?): Int? {
             val raw = text(key) ?: return default
             if (raw.lowercase() in setOf("nunca", "siempre", "0")) return null
-            return Durations.days(raw) ?: default.also { errors += "$key: usa un formato como 30d o «siempre»" }
+            // «0d» es lo mismo que «0»: no caduca nunca (borrar al instante no tiene sentido).
+            return Durations.days(raw)?.takeIf { it > 0 } ?: if (Durations.days(raw) == 0) null else default.also { errors += "$key: usa un formato como 30d o «siempre»" }
         }
     }
 

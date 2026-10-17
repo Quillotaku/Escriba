@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
@@ -59,7 +60,7 @@ class SystemActions(
     val openAppSettings: () -> Unit,
 )
 
-enum class SettingsPage { WATCH, VAULT, VOICES, MODELS, BATTERY, LOG }
+enum class SettingsPage { WATCH, VAULT, VOICES, MODELS, BENCHMARK, STORAGE, BATTERY, LOG }
 
 /** Columna con desplazamiento y los márgenes del sistema. */
 @Composable
@@ -101,6 +102,7 @@ fun SettingsScreen(app: EscribaApp, padding: PaddingValues, open: (SettingsPage)
                 Triple(Icons.Rounded.Edit, "Bóveda y perfiles", app.vault.displayPath() ?: "Sin elegir") to SettingsPage.VAULT,
                 Triple(EscribaIcons.People, "Voces registradas", if (voices.isEmpty()) "Ninguna" else voices.joinToString { it.name }) to SettingsPage.VOICES,
                 Triple(EscribaIcons.Waveform, "Modelos", if (folder == null) "Sin carpeta de modelos" else "${app.models.models.value.size} modelos") to SettingsPage.MODELS,
+                Triple(Icons.Rounded.Delete, "Almacenamiento", "Audio guardado y cuándo se borra") to SettingsPage.STORAGE,
                 Triple(EscribaIcons.Battery, "Batería", "Que el sistema no cierre Escriba") to SettingsPage.BATTERY,
                 Triple(EscribaIcons.Notes, "Registro", "Lo que ha hecho la app, para diagnosticar") to SettingsPage.LOG,
             )

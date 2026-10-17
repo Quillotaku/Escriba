@@ -86,7 +86,7 @@ class ProfileRepository(
      * Guarda los cambios hechos desde la app. Conserva las propiedades que la app no edita.
      * Si el archivo cambió desde que se abrió el editor (p. ej. en Obsidian), no sobrescribe.
      */
-    suspend fun saveProfile(id: String, changes: Map<String, YamlValue>, prompt: String, openedAt: Long?): Result<Unit> = withContext(Dispatchers.IO) {
+    suspend fun saveProfile(id: String, changes: Map<String, YamlValue>, prompt: String?, openedAt: Long?): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val path = "${VaultBootstrap.PROFILES_DIR}/$id.md"
             val current = vault.readText(path)
@@ -96,13 +96,53 @@ class ProfileRepository(
             val (fm, _) = Frontmatter.parse(current ?: "")
             val props = LinkedHashMap(fm.properties)
             changes.forEach { (k, v) -> if (v == YamlValue.Empty) props.remove(k) else props[k] = v }
-            vault.writeText(path, Frontmatter.note(props, replacePrompt(fm.body, prompt)))
+            // prompt nulo: no se toca el cuerpo (un perfil hijo sigue heredando el prompt del padre).
+            vault.writeText(path, Frontmatter.note(props, if (prompt == null) fm.body else replacePrompt(fm.body, prompt)))
             AppLog.i(TAG, "Perfil «$id» guardado desde la app")
             reload()
             syncToWatch()
             Unit
         }
     }
+
+    /**
+     * Crea un perfil nuevo en la bóveda y devuelve su id (el nombre del archivo). Si se basa en
+     * otro, solo lleva `hereda:` y lo propio; si no, unos valores de partida razonables.
+     */
+    suspend fun createProfile(name: String, basedOn: String?, color: String): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val clean = name.trim()
+            require(clean.isNotEmpty()) { "Ponle un nombre al perfil" }
+            val base = slug(clean).ifEmpty { "perfil" }
+            var id = base
+            var n = 2
+            while (vault.exists("${VaultBootstrap.PROFILES_DIR}/$id.md")) id = "$base-${n++}"
+            val props = linkedMapOf<String, YamlValue>("nombre" to YamlValue.Text(clean), "color" to YamlValue.Text(color))
+            val body = if (basedOn != null) {
+                props["hereda"] = YamlValue.Text(basedOn)
+                // Cuerpo vacío: sin «## Prompt» propio, el prompt también se hereda.
+                ""
+            } else {
+                props["icono"] = YamlValue.Text("mic")
+                props["modo"] = YamlValue.Text("bajo_demanda")
+                props["carpeta"] = YamlValue.Text(clean)
+                "## Prompt\nResume la conversación en unas líneas y extrae las decisiones y las tareas.\n"
+            }
+            vault.writeText("${VaultBootstrap.PROFILES_DIR}/$id.md", Frontmatter.note(props, body))
+            AppLog.i(TAG, "Perfil «$id» creado desde la app" + (basedOn?.let { " (hereda de $it)" } ?: ""))
+            reload()
+            syncToWatch()
+            id
+        }
+    }
+
+    /** «Reuniones Acme» → «reuniones-acme»: el id es el nombre del archivo. */
+    private fun slug(text: String): String =
+        java.text.Normalizer.normalize(text, java.text.Normalizer.Form.NFD)
+            .replace(Regex("\\p{M}+"), "")
+            .lowercase()
+            .replace(Regex("[^a-z0-9]+"), "-")
+            .trim('-')
 
     private fun replacePrompt(body: String, prompt: String): String {
         val lines = body.lines()

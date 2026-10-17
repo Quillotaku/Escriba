@@ -159,6 +159,13 @@ class ProfileLoaderTest {
     }
 
     @Test
+    fun `las opciones cerradas no distinguen mayusculas`() {
+        val set = ProfileLoader.load("---\nnota_diaria_formato: yyyy-mm-dd\n---\n", mapOf("trabajo" to base))
+        assertEquals("YYYY-MM-DD", set.config.dailyFormat)
+        assertTrue(set.errors["escriba.md"].orEmpty().none { "nota_diaria_formato" in it }, "sin error de formato: ${set.errors}")
+    }
+
+    @Test
     fun `configuracion global y lista para el reloj`() {
         val config = "---\nhorario: \"08:00-22:00\"\nperfil_por_defecto: acme\nretencion_audio_movil: 3d\n---\n"
         val set = ProfileLoader.load(config, mapOf("trabajo" to base, "acme" to acme))

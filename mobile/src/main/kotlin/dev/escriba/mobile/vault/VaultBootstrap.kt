@@ -91,7 +91,7 @@ object VaultBootstrap {
               - clientes
             guardar_audio: true
             retencion_audio: 90d
-            redondeo: 5m
+            redondeo: 1m
             nota_diaria: dataview
             ---
             > Para un cliente concreto, crea `trabajo-acme.md` con `hereda: trabajo`,

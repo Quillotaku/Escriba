@@ -52,11 +52,25 @@ import dev.escriba.mobile.ui.settings.WatchPage
 import dev.escriba.mobile.ui.theme.Escriba
 import dev.escriba.mobile.ui.theme.Space
 import dev.escriba.mobile.ui.today.TodayScreen
+import dev.escriba.mobile.ui.dashboard.DashboardScreen
+import dev.escriba.mobile.ui.components.EscribaIcons
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.ui.draw.scale
 
 /** Destinos de la app. Las tres pestañas tienen cada una su propia pila. */
 sealed interface Route : NavKey {
     data object Today : Route
     data object Sessions : Route
+    data object Dashboard : Route
     data object Settings : Route
     data class Session(val id: String, val focus: Int) : Route
     data class Setting(val page: SettingsPage) : Route
@@ -66,6 +80,7 @@ sealed interface Route : NavKey {
 internal enum class Tab(val root: Route, val label: String, val icon: ImageVector) {
     TODAY(Route.Today, "Hoy", Icons.Rounded.Home),
     SESSIONS(Route.Sessions, "Sesiones", Icons.AutoMirrored.Rounded.List),
+    DASHBOARD(Route.Dashboard, "Panel", EscribaIcons.Chart),
     SETTINGS(Route.Settings, "Ajustes", Icons.Rounded.Settings),
 }
 
@@ -104,6 +119,7 @@ internal class Navigator {
 private fun title(route: Route): String? = when (route) {
     Route.Today -> null
     Route.Sessions -> "Sesiones"
+    Route.Dashboard -> "Panel"
     Route.Settings -> "Ajustes"
     is Route.Session -> "Sesión"
     is Route.ProfileEdit -> "Perfil"
@@ -148,7 +164,14 @@ fun AppRoot(app: EscribaApp, actions: SystemActions) {
                     NavigationBarItem(
                         selected = nav.tab == t,
                         onClick = { nav.select(t) },
-                        icon = { Icon(t.icon, null) },
+                        icon = {
+                            val scale by animateFloatAsState(
+                                targetValue = if (nav.tab == t) 1.15f else 1f,
+                                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
+                                label = "icono",
+                            )
+                            Icon(t.icon, null, Modifier.scale(scale))
+                        },
                         label = { Text(t.label) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = c.lapis, selectedTextColor = c.lapis, indicatorColor = c.lapisSoft,
@@ -160,16 +183,41 @@ fun AppRoot(app: EscribaApp, actions: SystemActions) {
         },
     ) { padding ->
         // Cada pestaña muestra su propia pila; al cambiar de pestaña se conserva lo que había.
+        // Cambiar de pestaña desliza hacia su lado; dentro de una pestaña, entrar empuja y volver retira.
+        AnimatedContent(
+            targetState = nav.tab,
+            transitionSpec = {
+                val direction = if (targetState.ordinal > initialState.ordinal) 1 else -1
+                (slideInHorizontally(tween(260)) { direction * it / 6 } + fadeIn(tween(220)))
+                    .togetherWith(slideOutHorizontally(tween(200)) { -direction * it / 6 } + fadeOut(tween(160)))
+            },
+            label = "pestañas",
+        ) { tab ->
         NavDisplay(
-            backStack = stack,
+            backStack = nav.stack(tab),
             onBack = { if (!nav.back()) activity?.finish() },
+            transitionSpec = {
+                (slideInHorizontally(tween(280)) { it / 3 } + fadeIn(tween(200))).togetherWith(fadeOut(tween(150)))
+            },
+            popTransitionSpec = {
+                fadeIn(tween(200)).togetherWith(slideOutHorizontally(tween(260)) { it / 3 } + fadeOut(tween(200)))
+            },
+            predictivePopTransitionSpec = {
+                fadeIn(tween(200)).togetherWith(slideOutHorizontally(tween(260)) { it / 3 } + fadeOut(tween(200)))
+            },
             entryProvider = entryProvider {
                 entry<Route.Today> {
-                    TodayScreen(app, padding, openSession = { id, i -> nav.push(Route.Session(id, i)) }, openWatch = {
-                        nav.select(Tab.SETTINGS)
-                        nav.push(Route.Setting(SettingsPage.WATCH))
-                    })
+                    TodayScreen(
+                        app, padding,
+                        openSession = { id, i -> nav.push(Route.Session(id, i)) },
+                        openWatch = {
+                            nav.select(Tab.SETTINGS)
+                            nav.push(Route.Setting(SettingsPage.WATCH))
+                        },
+                        openPanel = { nav.select(Tab.DASHBOARD) },
+                    )
                 }
+                entry<Route.Dashboard> { DashboardScreen(app, padding) { id, i -> nav.push(Route.Session(id, i)) } }
                 entry<Route.Sessions> { SessionsScreen(app, padding) { id, i -> nav.push(Route.Session(id, i)) } }
                 entry<Route.Settings> { SettingsScreen(app, padding) { page -> nav.push(Route.Setting(page)) } }
                 entry<Route.Session> { r -> SessionDetailScreen(app, r.id, r.focus, padding) { nav.back() } }
@@ -188,5 +236,6 @@ fun AppRoot(app: EscribaApp, actions: SystemActions) {
                 }
             },
         )
+        }
     }
 }

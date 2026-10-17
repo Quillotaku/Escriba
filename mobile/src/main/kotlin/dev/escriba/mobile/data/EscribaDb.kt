@@ -119,6 +119,31 @@ data class VoiceEntity(
     val updatedAtMs: Long,
 )
 
+/**
+ * Uso de los modelos: una fila por transcripción o resumen hecho (no se borra al reprocesar).
+ * Alimenta el panel: minutos de audio transcritos, tiempo de cálculo y tokens del LLM.
+ */
+@Entity(tableName = "usage_log")
+data class UsageEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    /** «asr» (transcripción) o «llm» (resumen). */
+    val kind: String,
+    val model: String,
+    val sessionId: String,
+    /** Audio procesado (solo transcripción). */
+    val audioMs: Long,
+    /** Tiempo de cálculo. */
+    val computeMs: Long,
+    val promptTokens: Int,
+    val generatedTokens: Int,
+    val atMs: Long,
+) {
+    companion object {
+        const val ASR = "asr"
+        const val LLM = "llm"
+    }
+}
+
 @Dao
 interface SessionDao {
     @Query("SELECT * FROM sessions ORDER BY startMs DESC")
@@ -231,6 +256,12 @@ interface SessionDao {
     @Query("SELECT * FROM notes WHERE sessionId = :sessionId ORDER BY conversation")
     fun observeNotes(sessionId: String): Flow<List<NoteEntity>>
 
+    @Insert
+    suspend fun insertUsage(u: UsageEntity)
+
+    @Query("SELECT * FROM usage_log WHERE atMs >= :fromMs ORDER BY atMs")
+    fun observeUsageSince(fromMs: Long): Flow<List<UsageEntity>>
+
     @Query("SELECT * FROM voices ORDER BY name")
     suspend fun voices(): List<VoiceEntity>
 
@@ -257,7 +288,7 @@ interface SessionDao {
     }
 }
 
-@Database(entities = [SessionEntity::class, FragmentEntity::class, NoteEntity::class, TranscriptEntity::class, InsightsEntity::class, DiarizationEntity::class, VoiceEntity::class], version = 5, exportSchema = true)
+@Database(entities = [SessionEntity::class, FragmentEntity::class, NoteEntity::class, TranscriptEntity::class, InsightsEntity::class, DiarizationEntity::class, VoiceEntity::class, UsageEntity::class], version = 6, exportSchema = true)
 abstract class EscribaDb : RoomDatabase() {
     abstract fun sessions(): SessionDao
 
@@ -312,8 +343,26 @@ abstract class EscribaDb : RoomDatabase() {
             }
         }
 
+        /**
+         * Fase 10 → 1.0: registro de uso de los modelos. Las transcripciones que ya había entran como
+         * historial (los tokens del resumen no se guardaban: se cuentan desde aquí).
+         */
+        internal val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `usage_log` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `kind` TEXT NOT NULL, " +
+                        "`model` TEXT NOT NULL, `sessionId` TEXT NOT NULL, `audioMs` INTEGER NOT NULL, `computeMs` INTEGER NOT NULL, " +
+                        "`promptTokens` INTEGER NOT NULL, `generatedTokens` INTEGER NOT NULL, `atMs` INTEGER NOT NULL)",
+                )
+                db.execSQL(
+                    "INSERT INTO usage_log (kind, model, sessionId, audioMs, computeMs, promptTokens, generatedTokens, atMs) " +
+                        "SELECT 'asr', model, sessionId, audioMs, transcribeMs, 0, 0, createdAtMs FROM transcripts",
+                )
+            }
+        }
+
         /** Todas las migraciones, en orden. Los tests comprueban que llevan de la v1 a la actual. */
-        internal val MIGRATIONS get() = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+        internal val MIGRATIONS get() = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
 
         fun open(context: Context): EscribaDb =
             Room.databaseBuilder(context.applicationContext, EscribaDb::class.java, "escriba.db")

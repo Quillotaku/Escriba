@@ -95,6 +95,15 @@ object EscribaIcons {
         }
     }
 
+    /** Tres barras de distinta altura: el panel. */
+    val Chart: ImageVector by lazy {
+        icon("Chart") {
+            moveTo(4f, 12f); horizontalLineTo(8f); verticalLineTo(20f); horizontalLineTo(4f); close()
+            moveTo(10f, 4f); horizontalLineTo(14f); verticalLineTo(20f); horizontalLineTo(10f); close()
+            moveTo(16f, 9f); horizontalLineTo(20f); verticalLineTo(20f); horizontalLineTo(16f); close()
+        }
+    }
+
     /** Media luna: apariencia. */
     val Contrast: ImageVector by lazy {
         icon("Contrast") {

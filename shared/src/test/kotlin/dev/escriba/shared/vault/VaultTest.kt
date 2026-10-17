@@ -211,10 +211,16 @@ class NotesTest {
     }
 
     @Test
-    fun `redondeo hacia arriba en multiplos`() {
+    fun `redondeo al minuto mas cercano o al multiplo del perfil`() {
+        // Por defecto, al minuto más cercano.
+        assertEquals(1, Conversations.roundedMinutes(20_000))
+        assertEquals(1, Conversations.roundedMinutes(89_000))
+        assertEquals(2, Conversations.roundedMinutes(90_000))
+        assertEquals(41, Conversations.roundedMinutes(41 * 60_000 + 10_000))
+        // Con «redondeo: 5m», al múltiplo de 5 más cercano, nunca menos de 5.
         assertEquals(5, Conversations.roundedMinutes(30_000, 5))
-        assertEquals(5, Conversations.roundedMinutes(5 * 60_000, 5))
-        assertEquals(10, Conversations.roundedMinutes(5 * 60_000 + 1, 5))
+        assertEquals(5, Conversations.roundedMinutes(7 * 60_000, 5))
+        assertEquals(10, Conversations.roundedMinutes(8 * 60_000, 5))
         assertEquals(75, Conversations.roundedMinutes(73 * 60_000, 5))
     }
 
@@ -229,7 +235,7 @@ class NotesTest {
         assertEquals("2026-10-16", fm.text("fecha"))
         assertEquals("10:32", fm.text("inicio"))
         assertEquals("10:34", fm.text("fin"))
-        assertEquals("5", fm.text("duracion_min"))
+        assertEquals("3", fm.text("duracion_min")) // al minuto más cercano (el perfil no fija redondeo)
         assertEquals("[[Acme]]", fm.text("cliente"))
         assertEquals("[[Adjuntos/Escriba/2026-10-16 1032 Trabajo.ogg]]", fm.text("audio"))
         assertTrue("![[Adjuntos/Escriba/2026-10-16 1032 Trabajo.ogg]]" in fm.body)

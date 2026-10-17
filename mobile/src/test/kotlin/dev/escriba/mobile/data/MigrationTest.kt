@@ -38,7 +38,7 @@ class MigrationTest {
             )
         }
 
-        helper.runMigrationsAndValidate(DB, 5, true, *EscribaDb.MIGRATIONS).use { db ->
+        helper.runMigrationsAndValidate(DB, 6, true, *EscribaDb.MIGRATIONS).use { db ->
             db.query("SELECT profileId, speechMs, processedAtMs FROM sessions WHERE id = 's1'").use { c ->
                 c.moveToFirst()
                 assertEquals("trabajo", c.getString(0))
@@ -69,6 +69,27 @@ class MigrationTest {
                 assertEquals("gemma", c.getString(0))
             }
             db.query("SELECT * FROM diarizations").use { c -> assertNull(if (c.moveToFirst()) c else null) }
+        }
+    }
+
+    @Test
+    fun `de la v5 a la v6 las transcripciones pasan al registro de uso`() {
+        helper.createDatabase(DB, 5).use { db ->
+            db.execSQL(
+                "INSERT INTO transcripts (sessionId, model, language, linesJson, audioMs, transcribeMs, createdAtMs) " +
+                    "VALUES ('s1', 'ggml-large-v3-turbo-q8_0.bin', 'es', '[]', 215000, 55000, 1000)",
+            )
+        }
+        helper.runMigrationsAndValidate(DB, 6, true, EscribaDb.MIGRATION_5_6).use { db ->
+            db.query("SELECT kind, model, audioMs, computeMs, promptTokens FROM usage_log").use { c ->
+                assertEquals(1, c.count)
+                c.moveToFirst()
+                assertEquals("asr", c.getString(0))
+                assertEquals("ggml-large-v3-turbo-q8_0.bin", c.getString(1))
+                assertEquals(215000, c.getLong(2))
+                assertEquals(55000, c.getLong(3))
+                assertEquals(0, c.getInt(4))
+            }
         }
     }
 

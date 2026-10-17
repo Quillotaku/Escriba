@@ -16,6 +16,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -84,7 +85,7 @@ fun ConversationState.chip() = when (this) {
 }
 
 @Composable
-fun TodayScreen(app: EscribaApp, padding: PaddingValues, openSession: (String, Int) -> Unit, openWatch: () -> Unit) {
+fun TodayScreen(app: EscribaApp, padding: PaddingValues, openSession: (String, Int) -> Unit, openWatch: () -> Unit, openPanel: () -> Unit) {
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -128,20 +129,8 @@ fun TodayScreen(app: EscribaApp, padding: PaddingValues, openSession: (String, I
         }
 
         item {
-            val parts = overview.week.map { MetricPart(it.name, c.profileColor(it.color), it.minutes.toLong(), formatMinutes(it.minutes)) }
-            MetricTile("Esta semana", formatMinutes(overview.weekMinutes), parts, Modifier.padding(top = Space.s2))
-        }
-
-        item { Overline("Tareas de la semana", Modifier.padding(top = Space.s2)) }
-        if (overview.tasks.isEmpty()) {
-            item { Text("Las tareas que salgan en tus conversaciones aparecerán aquí.", style = MaterialTheme.typography.bodyLarge, color = c.inkMuted) }
-        } else {
-            items(overview.tasks.take(8), key = { "${it.sessionId}-${it.task.text}" }) { t ->
-                EsCard(onClick = { openSession(t.sessionId, 1) }) {
-                    Text(t.task.text, style = MaterialTheme.typography.bodyLarge, color = c.ink)
-                    val meta = listOfNotNull(t.task.owner, t.task.due?.let { "para el $it" }, t.conversationTitle).joinToString(" · ")
-                    if (meta.isNotEmpty()) Text(meta, style = MaterialTheme.typography.bodyMedium, color = c.inkMuted)
-                }
+            TextButton(onClick = openPanel, modifier = Modifier.padding(top = Space.s1)) {
+                Text("Ver el panel: tareas, semana y modelos")
             }
         }
     }

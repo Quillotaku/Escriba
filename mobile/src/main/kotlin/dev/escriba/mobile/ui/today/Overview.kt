@@ -92,7 +92,7 @@ fun conversationsOf(
                 startMs = c.startMs,
                 endMs = c.endMs,
                 speechMs = c.speechMs,
-                roundedMin = Conversations.roundedMinutes(c.endMs - c.startMs, profile?.roundingMin ?: 5),
+                roundedMin = Conversations.roundedMinutes(c.endMs - c.startMs, profile?.roundingMin ?: 1),
                 profileId = profile?.id ?: s.profileId,
                 profileName = profile?.name ?: s.profileId,
                 profileColor = profile?.color,

@@ -101,9 +101,9 @@ class OverviewTest {
         val o = buildOverview(now, zone, conv, emptyList())
 
         assertEquals(listOf("hoy"), o.today.map { it.sessionId })
-        // Trabajo: 5 (3 min) + 45 (41 min); Casual: 35 (32 min). La semana pasada no cuenta.
-        assertEquals(mapOf("trabajo" to 50, "casual" to 35), o.week.associate { it.profileId to it.minutes })
-        assertEquals(85, o.weekMinutes)
+        // Trabajo fija «redondeo: 5m»: 5 (3 min) + 40 (41 min). Casual, al minuto: 32. La semana pasada no cuenta.
+        assertEquals(mapOf("trabajo" to 45, "casual" to 32), o.week.associate { it.profileId to it.minutes })
+        assertEquals(77, o.weekMinutes)
         assertEquals("trabajo", o.week.first().profileId)
     }
 

@@ -16,6 +16,7 @@ import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.escriba.datalayer.AppLog
 import dev.escriba.mobile.ui.nav.AppRoot
+import dev.escriba.mobile.ui.onboarding.OnboardingScreen
 import dev.escriba.mobile.ui.settings.SystemActions
 import dev.escriba.mobile.ui.theme.EscribaTheme
 import dev.escriba.mobile.ui.theme.resolve
@@ -38,11 +39,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        // La notificación del procesado (transcripción) necesita permiso desde Android 13.
-        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+        val app = application as EscribaApp
+        // La notificación del procesado necesita permiso; en la primera vez lo pide el tour.
+        if (app.onboarding.done.value && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
-        val app = application as EscribaApp
         val actions = SystemActions(
             isBatteryExempt = { getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName) },
             requestBatteryExemption = ::requestBatteryExemption,
@@ -50,8 +51,9 @@ class MainActivity : ComponentActivity() {
         )
         setContent {
             val dark by app.appearance.dark.collectAsStateWithLifecycle()
+            val tourDone by app.onboarding.done.collectAsStateWithLifecycle()
             EscribaTheme(dark = app.appearance.resolve(dark)) {
-                AppRoot(app, actions)
+                if (tourDone) AppRoot(app, actions) else OnboardingScreen(app, actions)
             }
         }
     }

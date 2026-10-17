@@ -15,6 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -110,6 +111,9 @@ fun SettingsScreen(app: EscribaApp, padding: PaddingValues, open: (SettingsPage)
                 if (i > 0) HorizontalDivider(color = c.rule)
                 SettingRow(row.first, row.second, row.third, onClick = { open(page) })
             }
+        }
+        EsCard {
+            SettingRow(Icons.Rounded.PlayArrow, "Tour de inicio", "Volver a configurar paso a paso", onClick = { app.onboarding.restart() })
         }
     }
 }

@@ -5,6 +5,7 @@ import dev.escriba.mobile.data.DiarizationEntity
 import dev.escriba.mobile.data.EscribaDb
 import dev.escriba.mobile.data.InsightsEntity
 import dev.escriba.mobile.data.TranscriptEntity
+import dev.escriba.mobile.data.UsageEntity
 import dev.escriba.mobile.llm.KnownEntities
 import dev.escriba.mobile.llm.Summarizer
 import dev.escriba.mobile.transcription.ParakeetAsr
@@ -230,6 +231,12 @@ class SessionProcessor(
 
         onStep(Step.Transcribing(model, fragments.sumOf { it.speechMs } / 1000))
         val result = transcriber.open(model, motor = motor).use { it.transcribe(fragments, language, vocabulary) }
+        dao.insertUsage(
+            UsageEntity(
+                kind = UsageEntity.ASR, model = result.stats.model, sessionId = sessionId, audioMs = result.stats.audioMs,
+                computeMs = result.stats.transcribeMs, promptTokens = 0, generatedTokens = 0, atMs = System.currentTimeMillis(),
+            ),
+        )
         dao.upsertTranscript(
             TranscriptEntity(
                 sessionId = sessionId,
@@ -276,6 +283,13 @@ class SessionProcessor(
                 val own = lines.filter { it.wallStartMs >= c.startMs - 1_000 && it.wallStartMs <= c.endMs + 1_000 }
                 if (own.isEmpty()) continue
                 val r = session.summarize(own, profile, known, zone)
+                dao.insertUsage(
+                    UsageEntity(
+                        kind = UsageEntity.LLM, model = r.stats.model, sessionId = sessionId, audioMs = 0,
+                        computeMs = r.stats.totalMs, promptTokens = r.stats.promptTokens, generatedTokens = r.stats.generatedTokens,
+                        atMs = System.currentTimeMillis(),
+                    ),
+                )
                 dao.upsertInsights(InsightsEntity(sessionId, c.index, session.modelName, key, EscribaJson.encodeToString(r.insights), System.currentTimeMillis()))
                 result[c.index] = r.insights
             }

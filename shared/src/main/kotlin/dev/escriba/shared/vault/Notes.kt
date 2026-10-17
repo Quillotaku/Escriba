@@ -42,11 +42,14 @@ object Conversations {
         return groups.mapIndexed { i, g -> Conversation(i + 1, g) }
     }
 
-    /** Duración redondeada hacia arriba al múltiplo de [roundingMin] (mínimo uno). */
-    fun roundedMinutes(durationMs: Long, roundingMin: Int): Int {
-        val minutes = Math.ceil(durationMs / 60_000.0).toInt().coerceAtLeast(1)
+    /**
+     * Duración redondeada al múltiplo de [roundingMin] más cercano (por defecto, al minuto). Nunca
+     * menos de un paso: una conversación de 20 s cuenta como 1 min, no como 0.
+     */
+    fun roundedMinutes(durationMs: Long, roundingMin: Int = 1): Int {
         val step = roundingMin.coerceAtLeast(1)
-        return ((minutes + step - 1) / step) * step
+        val steps = Math.round(durationMs / 60_000.0 / step).toInt().coerceAtLeast(1)
+        return steps * step
     }
 }
 

@@ -204,7 +204,7 @@ object ProfileLoader {
             discardTrivial = p.bool("descartar_triviales", false),
             saveAudio = p.bool("guardar_audio", false),
             audioRetentionDays = p.days("retencion_audio", 30),
-            roundingMin = p.minutes("redondeo", 5),
+            roundingMin = p.minutes("redondeo", 1),
             dailyNote = when (p.oneOf("nota_diaria", setOf("dataview", "enlace", "ninguna"), "dataview")) {
                 "enlace" -> DailyNoteMode.ENLACE
                 "ninguna" -> DailyNoteMode.NINGUNA

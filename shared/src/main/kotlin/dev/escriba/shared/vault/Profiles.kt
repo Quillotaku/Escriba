@@ -21,6 +21,7 @@ data class Profile(
     val folder: String,
     val template: String?,
     val whisper: String,
+    val llm: String,
     val language: String,
     val vocabulary: List<String>,
     val diarization: Boolean,
@@ -75,6 +76,7 @@ data class GlobalConfig(
     val attachmentsFolder: String = "Adjuntos/Escriba",
     val defaultProfile: String = "casual",
     val defaultWhisper: String = "large-v3-turbo-q8_0",
+    val defaultLlm: String = "gemma-3-4b-it-Q4_K_M",
     val phoneAudioRetentionDays: Int = 7,
 )
 
@@ -110,7 +112,7 @@ object ProfileLoader {
 
     private val KNOWN = setOf(
         "version", "nombre", "hereda", "color", "icono", "favorito", "modo", "vad", "separar_tras_silencio", "carpeta",
-        "plantilla", "whisper", "idioma", "vocabulario", "diarizacion", "tareas", "enlazar", "descartar_triviales",
+        "plantilla", "whisper", "llm", "idioma", "vocabulario", "diarizacion", "tareas", "enlazar", "descartar_triviales",
         "guardar_audio", "retencion_audio", "redondeo", "nota_diaria", "cliente",
     )
 
@@ -189,6 +191,7 @@ object ProfileLoader {
             folder = p.text("carpeta", "Grabaciones/{{yyyy}}/{{MM}}").trim('/'),
             template = p.text("plantilla"),
             whisper = p.text("whisper", config.defaultWhisper),
+            llm = p.text("llm", config.defaultLlm),
             language = p.oneOf("idioma", LANGUAGES, "es"),
             vocabulary = p.list("vocabulario"),
             diarization = p.bool("diarizacion", false),
@@ -236,6 +239,7 @@ object ProfileLoader {
             attachmentsFolder = p.text("carpeta_adjuntos", d.attachmentsFolder).trim('/'),
             defaultProfile = p.text("perfil_por_defecto", d.defaultProfile),
             defaultWhisper = p.text("whisper_por_defecto", d.defaultWhisper),
+            defaultLlm = p.text("llm_por_defecto", d.defaultLlm),
             phoneAudioRetentionDays = p.days("retencion_audio_movil", d.phoneAudioRetentionDays) ?: d.phoneAudioRetentionDays,
         )
     }

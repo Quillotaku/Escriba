@@ -16,4 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "escriba"
 
-include(":shared", ":datalayer", ":native", ":wear", ":mobile")
+include(":shared", ":datalayer", ":native", ":llm", ":wear", ":mobile")

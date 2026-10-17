@@ -38,6 +38,7 @@ class ProcessWorker(context: Context, params: WorkerParameters) : CoroutineWorke
             app.processor.process(sessionId, profile) { step ->
                 when (step) {
                     is SessionProcessor.Step.Transcribing -> promote("Transcribiendo ${step.speechSeconds / 60} min ${step.speechSeconds % 60} s de voz…")
+                    is SessionProcessor.Step.Summarizing -> promote("Resumiendo con ${step.model}…")
                     SessionProcessor.Step.Writing -> promote("Escribiendo la nota…")
                 }
             }

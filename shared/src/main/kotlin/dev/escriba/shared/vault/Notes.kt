@@ -63,6 +63,10 @@ data class NoteData(
     val participants: List<String> = emptyList(),
     val audioLink: String? = null,
     val status: String = "pendiente",
+    /** Etiquetas extra (las del LLM); `escriba` y el perfil van siempre. */
+    val tags: List<String> = emptyList(),
+    /** Cliente detectado; el del perfil tiene prioridad. */
+    val client: String? = null,
 )
 
 object NoteRenderer {
@@ -119,9 +123,9 @@ object NoteRenderer {
             put("duracion_min", YamlValue.Number(Conversations.roundedMinutes(c.endMs - c.startMs, data.profile.roundingMin).toDouble()))
             put("duracion_habla_min", YamlValue.Number(Math.ceil(c.speechMs / 60_000.0)))
             put("perfil", YamlValue.Text(data.profile.id))
-            data.profile.client?.let { put("cliente", YamlValue.Text(it)) }
+            (data.profile.client ?: data.client)?.let { put("cliente", YamlValue.Text(it)) }
             put("participantes", if (data.participants.isEmpty()) YamlValue.Empty else YamlValue.Items(data.participants))
-            put("etiquetas", YamlValue.Items(listOf("escriba", data.profile.id)))
+            put("etiquetas", YamlValue.Items((listOf("escriba", data.profile.id) + data.tags).distinct()))
             data.audioLink?.let { put("audio", YamlValue.Text("[[$it]]")) }
             put("sesion", YamlValue.Text(data.sessionId))
             put("conversacion", YamlValue.Number(c.index.toDouble()))
@@ -141,7 +145,7 @@ object NoteRenderer {
             "inicio" to at(data.conversation.startMs, data.zone).format(TIME),
             "fin" to at(data.conversation.endMs, data.zone).format(TIME),
             "perfil" to data.profile.name,
-            "cliente" to (data.profile.client ?: "—"),
+            "cliente" to (data.profile.client ?: data.client ?: "—"),
             "participantes" to data.participants.joinToString(", ").ifEmpty { "—" },
             "duracion" to Conversations.roundedMinutes(data.conversation.endMs - data.conversation.startMs, data.profile.roundingMin).toString(),
         )
@@ -173,7 +177,7 @@ object NoteRenderer {
                 l.wallStartMs - lastEnd >= pauseMs ||
                 l.speaker != current.first.speaker ||
                 current.second.length + l.text.length > maxChars
-            if (startNew) paragraphs += l to StringBuilder(l.text) else current!!.second.append(' ').append(l.text)
+            if (startNew) paragraphs += l to StringBuilder(l.text) else current.second.append(' ').append(l.text)
             lastEnd = l.wallEndMs
         }
         return paragraphs.joinToString("\n\n") { (first, text) ->

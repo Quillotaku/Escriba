@@ -58,6 +58,8 @@ fun ModelsScreen(app: EscribaApp) {
     var pickModel by remember { mutableStateOf(false) }
     var flash by remember { mutableStateOf(true) }
     var fast by remember { mutableStateOf(false) }
+    var llmName by remember { mutableStateOf<String?>(null) }
+    var pickLlm by remember { mutableStateOf(false) }
     val folder by app.models.folder.collectAsStateWithLifecycle()
 
     val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
@@ -110,7 +112,7 @@ fun ModelsScreen(app: EscribaApp) {
         Box {
             OutlinedButton(onClick = { pickModel = true }) { Text(modelName ?: "Elegir modelo") }
             DropdownMenu(expanded = pickModel, onDismissRequest = { pickModel = false }) {
-                models.forEach { m -> DropdownMenuItem(text = { Text(m.name) }, onClick = { modelName = m.name; pickModel = false }) }
+                models.filter { it.kind == "whisper" }.forEach { m -> DropdownMenuItem(text = { Text(m.name) }, onClick = { modelName = m.name; pickModel = false }) }
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -135,6 +137,27 @@ fun ModelsScreen(app: EscribaApp) {
                 LinearProgressIndicator(Modifier.fillMaxWidth())
             }
             is Benchmark.State.Failed -> Text(s.message, color = MaterialTheme.colorScheme.error)
+            is Benchmark.State.LlmDone -> Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    val st = s.result.stats
+                    val i = s.result.insights
+                    Text(st.model, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Carga ${st.loadMs} ms · total ${st.totalMs / 1000} s · ${st.chunks} trozo(s)\n" +
+                            "Lectura ${st.promptTokens} tokens a %.0f t/s · escritura ${st.generatedTokens} tokens a %.1f t/s".format(st.promptTps, st.generateTps),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Text(i.title, fontWeight = FontWeight.SemiBold)
+                    Text(i.summary, fontSize = 13.sp)
+                    if (i.decisions.isNotEmpty()) Text("Decisiones:\n" + i.decisions.joinToString("\n") { "• $it" }, fontSize = 13.sp)
+                    if (i.tasks.isNotEmpty()) Text("Tareas:\n" + i.tasks.joinToString("\n") { t -> "☐ ${t.text}" + (t.owner?.let { " — $it" } ?: "") + (t.due?.let { " 📅 $it" } ?: "") }, fontSize = 13.sp)
+                    Text(
+                        "Personas: ${i.people.joinToString().ifEmpty { "—" }} · Proyectos: ${i.projects.joinToString().ifEmpty { "—" }} · " +
+                            "Clientes: ${i.clients.joinToString().ifEmpty { "—" }}\nEtiquetas: ${i.tags.joinToString()} · trivial: ${i.trivial}",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
             is Benchmark.State.Done -> Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     val st = s.result.stats
@@ -156,6 +179,16 @@ fun ModelsScreen(app: EscribaApp) {
             }
             Benchmark.State.Idle -> Unit
         }
+
+        Text("Prueba del LLM (resumen, tareas…)", style = MaterialTheme.typography.titleMedium)
+        Text("Usa la transcripción ya guardada de la sesión elegida arriba y el perfil con que se procesó.", style = MaterialTheme.typography.bodySmall)
+        Box {
+            OutlinedButton(onClick = { pickLlm = true }) { Text(llmName ?: "Elegir LLM") }
+            DropdownMenu(expanded = pickLlm, onDismissRequest = { pickLlm = false }) {
+                models.filter { it.kind == "llm" }.forEach { m -> DropdownMenuItem(text = { Text(m.name) }, onClick = { llmName = m.name; pickLlm = false }) }
+            }
+        }
+        Button(enabled = !running && sessionId != null && llmName != null, onClick = { app.benchmark.runLlm(sessionId!!, llmName!!) }) { Text("Resumir") }
 
         Text("CPU: " + remember { runCatching { WhisperEngine.systemInfo() }.getOrDefault("?") }, fontFamily = FontFamily.Monospace, fontSize = 10.sp)
     }

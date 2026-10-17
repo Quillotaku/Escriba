@@ -15,6 +15,8 @@ import dev.escriba.shared.vault.NoteRenderer
 import dev.escriba.shared.vault.OggConcat
 import dev.escriba.shared.vault.Profile
 import dev.escriba.shared.transcription.TranscriptLine
+import dev.escriba.shared.llm.EntityLinker
+import dev.escriba.shared.llm.Insights
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
@@ -40,7 +42,12 @@ class NoteWriter(
 
     data class Outcome(val notes: List<String>, val profile: Profile)
 
-    suspend fun process(sessionId: String, profileOverride: String? = null, transcript: List<TranscriptLine>? = null): Outcome = mutex.withLock {
+    suspend fun process(
+        sessionId: String,
+        profileOverride: String? = null,
+        transcript: List<TranscriptLine>? = null,
+        insights: Map<Int, Insights>? = null,
+    ): Outcome = mutex.withLock {
         val dao = db.sessions()
         try {
             check(vault.isConfigured) { "Elige la bóveda en la pestaña «Bóveda»" }
@@ -59,15 +66,22 @@ class NoteWriter(
             val template = profiles.template(profile.template)
             if (profile.template != null && template == null) AppLog.e(TAG, "Plantilla «${profile.template}» no encontrada; se usa la de serie")
 
+            val linker = linker(set.config, profile)
             val written = ArrayList<String>()
             for (conversation in conversations) {
+                val found = insights?.get(conversation.index)
+                if (found != null && found.trivial && profile.discardTrivial) {
+                    AppLog.i(TAG, "Conversación ${conversation.index} de ${sessionId.take(8)} sin contenido útil: no se escribe nota (descartar_triviales)")
+                    continue
+                }
                 // Las frases de esta conversación: las que empiezan dentro de su intervalo.
                 val lines = transcript?.filter { it.wallStartMs >= conversation.startMs - 1_000 && it.wallStartMs <= conversation.endMs + 1_000 }
-                val base = NoteData(
+                var base = NoteData(
                     sessionId, conversation, profile, zone,
                     transcript = lines?.let { if (it.isEmpty()) "_Sin voz reconocible._" else NoteRenderer.transcript(it, zone) },
                     status = if (transcript != null) "transcrita" else "pendiente",
                 )
+                if (found != null) base = withInsights(base, found, profile, linker)
                 val folder = NoteRenderer.folder(profile.folder, conversation.startMs, zone)
                 val baseName = NoteRenderer.baseName(base)
 
@@ -100,6 +114,57 @@ class NoteWriter(
             dao.session(sessionId)?.let { dao.upsertSession(it.copy(processError = e.message ?: e.javaClass.simpleName)) }
             throw e
         }
+    }
+
+    /** Rellena la nota con lo que sacó el LLM: título, resumen, decisiones, tareas, participantes y etiquetas. */
+    private fun withInsights(base: NoteData, i: Insights, profile: Profile, linker: EntityLinker): NoteData {
+        val linkPeople = "personas" in profile.link
+        fun person(name: String) = when {
+            name.equals("yo", ignoreCase = true) -> "Yo"
+            linkPeople -> linker.linkOrPlain(name)
+            else -> name.trim()
+        }
+        val summary = buildString {
+            append(i.summary.trim().ifEmpty { "_Sin resumen._" })
+            if (i.decisions.isNotEmpty()) {
+                append("\n\n**Decisiones**\n")
+                i.decisions.forEach { append("- ").append(it.trim()).append('\n') }
+            }
+        }.trimEnd()
+        // Formato del plugin Tasks: «- [ ] texto 📅 AAAA-MM-DD».
+        val tasks = if (!profile.tasks) "" else i.tasks.joinToString("\n") { t ->
+            buildString {
+                append("- [ ] ").append(t.text.trim())
+                t.owner?.takeIf { it.isNotBlank() }?.let { append(" — ").append(person(it)) }
+                t.due?.let { append(" 📅 ").append(it) }
+            }
+        }
+        val participants = i.people.map(::person).distinct()
+        val client = if ("clientes" in profile.link) i.clients.firstNotNullOfOrNull { linker.match(it) }?.let { "[[$it]]" } else null
+        val tags = i.tags.map { it.trim().lowercase().replace(Regex("[\\s#]+"), "-") }.filter { it.isNotEmpty() }
+        return base.copy(
+            title = i.title.trim().ifEmpty { base.title },
+            summary = summary,
+            tasks = tasks,
+            participants = participants,
+            client = client,
+            tags = tags,
+            status = "resumida",
+        )
+    }
+
+    /** Enlazador con las notas de personas, proyectos y clientes que ya existen en la bóveda. */
+    private fun linker(config: dev.escriba.shared.vault.GlobalConfig, profile: Profile): EntityLinker {
+        if (profile.link.isEmpty()) return EntityLinker(emptyList())
+        val folders = buildList {
+            if ("personas" in profile.link) add(config.peopleFolder)
+            if ("proyectos" in profile.link) add(config.projectsFolder)
+            if ("clientes" in profile.link) add(config.clientsFolder)
+        }
+        val names = folders.flatMap { folder ->
+            runCatching { vault.list(folder).filter { !it.isDirectory && it.name.endsWith(".md") }.map { it.name.removeSuffix(".md") } }.getOrDefault(emptyList())
+        }
+        return EntityLinker(names)
     }
 
     /** El perfil con el que se escribe: el pedido, el de la grabación o, si no existe, el de por defecto. */

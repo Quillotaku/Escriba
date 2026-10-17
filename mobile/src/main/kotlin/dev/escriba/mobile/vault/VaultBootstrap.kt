@@ -33,6 +33,7 @@ object VaultBootstrap {
             zona_horaria: Europe/Madrid
             perfil_por_defecto: casual
             whisper_por_defecto: large-v3-turbo-q8_0
+            llm_por_defecto: gemma-3-4b-it-Q4_K_M
             nota_diaria_carpeta: Diario
             nota_diaria_formato: YYYY-MM-DD
             carpeta_personas: Personas

@@ -10,8 +10,6 @@ import dev.escriba.shared.transcription.HallucinationFilter
 import dev.escriba.shared.transcription.Pcm
 import dev.escriba.shared.transcription.Timeline
 import dev.escriba.shared.transcription.TranscriptLine
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import java.io.Closeable
 import java.io.File
 
@@ -22,7 +20,7 @@ import java.io.File
  * 30 s: transcribir fragmentos de pocos segundos por separado desperdiciaría casi todo el
  * cálculo) y traduce cada frase a su hora real con la tabla de segmentos.
  */
-class Transcriber(private val models: ModelStore) {
+class Transcriber(private val models: ModelStore, private val slot: ModelSlot) {
 
     data class Stats(
         val model: String,
@@ -44,8 +42,6 @@ class Transcriber(private val models: ModelStore) {
     }
 
     data class Result(val lines: List<TranscriptLine>, val stats: Stats)
-
-    private val mutex = Mutex()
 
     /** Modelo cargado para una tanda de trabajo; se libera con [Session.close]. */
     inner class Session(
@@ -122,14 +118,14 @@ class Transcriber(private val models: ModelStore) {
         override fun close() {
             engine.close()
             file.close()
-            mutex.unlock()
+            slot.mutex.unlock()
         }
     }
 
     /** Carga el modelo [name]. Solo hay un modelo cargado a la vez: los demás esperan. */
     suspend fun open(name: String, flashAttn: Boolean = true): Session {
         val entry = models.find(name) ?: error("No hay ningún modelo «$name» importado. Impórtalo en la pestaña «Modelos».")
-        mutex.lock()
+        slot.mutex.lock()
         try {
             val start = System.currentTimeMillis()
             val file = models.open(entry)
@@ -141,7 +137,7 @@ class Transcriber(private val models: ModelStore) {
             AppLog.i(TAG, "Modelo ${entry.name} cargado en ${loadMs} ms")
             return Session(entry.name, engine, file, loadMs, flashAttn)
         } catch (e: Throwable) {
-            mutex.unlock()
+            slot.mutex.unlock()
             throw e
         }
     }

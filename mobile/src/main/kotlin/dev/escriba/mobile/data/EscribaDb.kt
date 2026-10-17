@@ -86,6 +86,18 @@ data class TranscriptEntity(
     val createdAtMs: Long,
 )
 
+/** Resultado del LLM para una conversación (título, resumen, tareas…) en JSON. */
+@Entity(tableName = "insights", primaryKeys = ["sessionId", "conversation"])
+data class InsightsEntity(
+    val sessionId: String,
+    val conversation: Int,
+    val model: String,
+    /** Huella del perfil: si cambia el prompt, el resultado ya no vale y se recalcula. */
+    val profileHash: String,
+    val json: String,
+    val createdAtMs: Long,
+)
+
 @Dao
 interface SessionDao {
     @Query("SELECT * FROM sessions ORDER BY startMs DESC")
@@ -161,16 +173,26 @@ interface SessionDao {
     @Query("DELETE FROM transcripts WHERE sessionId = :sessionId")
     suspend fun deleteTranscript(sessionId: String)
 
+    @Query("SELECT * FROM insights WHERE sessionId = :sessionId")
+    suspend fun insights(sessionId: String): List<InsightsEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertInsights(insights: InsightsEntity)
+
+    @Query("DELETE FROM insights WHERE sessionId = :sessionId")
+    suspend fun deleteInsights(sessionId: String)
+
     @Transaction
     suspend fun delete(sessionId: String) {
         deleteFragments(sessionId)
         deleteNotes(sessionId)
         deleteTranscript(sessionId)
+        deleteInsights(sessionId)
         deleteSession(sessionId)
     }
 }
 
-@Database(entities = [SessionEntity::class, FragmentEntity::class, NoteEntity::class, TranscriptEntity::class], version = 3, exportSchema = false)
+@Database(entities = [SessionEntity::class, FragmentEntity::class, NoteEntity::class, TranscriptEntity::class, InsightsEntity::class], version = 4, exportSchema = false)
 abstract class EscribaDb : RoomDatabase() {
     abstract fun sessions(): SessionDao
 
@@ -201,9 +223,19 @@ abstract class EscribaDb : RoomDatabase() {
             }
         }
 
+        /** Fase 6 → 7: resultados del LLM. */
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS insights (sessionId TEXT NOT NULL, conversation INTEGER NOT NULL, model TEXT NOT NULL, " +
+                        "profileHash TEXT NOT NULL, json TEXT NOT NULL, createdAtMs INTEGER NOT NULL, PRIMARY KEY(sessionId, conversation))",
+                )
+            }
+        }
+
         fun open(context: Context): EscribaDb =
             Room.databaseBuilder(context.applicationContext, EscribaDb::class.java, "escriba.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build()
     }
 }

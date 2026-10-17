@@ -32,3 +32,5 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../../whisper.cpp ${CMAKE_BINARY
 add_library(escriba_native SHARED whisper_jni.cpp)
 target_compile_options(escriba_native PRIVATE -O3)
 target_link_libraries(escriba_native PRIVATE whisper android log)
+# Ver llm/src/main/cpp/CMakeLists.txt: cada biblioteca oculta su copia de ggml.
+target_link_options(escriba_native PRIVATE -Wl,--exclude-libs,ALL)

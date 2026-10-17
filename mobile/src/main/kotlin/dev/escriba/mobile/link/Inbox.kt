@@ -55,6 +55,7 @@ class Inbox(
         if (paired == null || channel.nodeId != paired.nodeId) {
             AppLog.e(TAG, "Canal de un nodo no emparejado; se ignora")
             runCatching { link.channels.close(channel).await() }
+            link.reportUnknown(channel.nodeId)
             return
         }
         val secure = link.keys.channel() ?: return

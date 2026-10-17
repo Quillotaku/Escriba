@@ -210,6 +210,7 @@ private fun HomeScreen(app: EscribaWearApp, actions: WatchActions, open: (Screen
     val live by RecordingState.live.collectAsStateWithLifecycle()
     val selected by app.profiles.selected.collectAsStateWithLifecycle()
     val peer by app.link.keys.peer.collectAsStateWithLifecycle()
+    val lost by app.pairing.peerLost.collectAsStateWithLifecycle()
     val ambientManager = LocalAmbientModeManager.current
     val ambient = ambientManager?.currentAmbientMode is AmbientMode.Ambient
 
@@ -265,7 +266,12 @@ private fun HomeScreen(app: EscribaWearApp, actions: WatchActions, open: (Screen
                 if (!ambient) {
                     Text(
                         listOfNotNull(
-                            if (peer == null) "Sin emparejar" else if (pending > 0) "$pending por enviar" else "Todo enviado",
+                            when {
+                                peer == null -> "Sin emparejar"
+                                lost -> "Vuelve a emparejar"
+                                pending > 0 -> "$pending por enviar"
+                                else -> "Todo enviado"
+                            },
                             battery?.let { "${it.toInt()} %" },
                         ).joinToString(" · "),
                         style = MaterialTheme.typography.bodySmall, color = WatchColors.inkMuted,
@@ -284,7 +290,7 @@ private fun HomeScreen(app: EscribaWearApp, actions: WatchActions, open: (Screen
                     secondaryLabel = { Text(selected?.name ?: "Sin perfiles", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 ) { Text("Perfil") }
             }
-            action(spec, "Móvil", if (peer == null) "Sin emparejar" else "Emparejado", icon = WatchIcons.Phone) { open(Screen.PHONE) }
+            action(spec, "Móvil", if (peer == null) "Sin emparejar" else if (lost) "Vuelve a emparejar" else "Emparejado", icon = WatchIcons.Phone) { open(Screen.PHONE) }
             action(spec, "Ajustes", icon = WatchIcons.Tune) { open(Screen.SETTINGS) }
             action(spec, "Diagnóstico", icon = WatchIcons.Lines) { open(Screen.DIAGNOSTICS) }
         }
@@ -381,6 +387,7 @@ private fun PhoneScreen(app: EscribaWearApp, actions: WatchActions) {
     val peer by app.link.keys.peer.collectAsStateWithLifecycle()
     val pairing by app.pairing.state.collectAsStateWithLifecycle()
     val upload by app.uploader.stats.collectAsStateWithLifecycle()
+    val lost by app.pairing.peerLost.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     fun at(ms: Long) = if (ms == 0L) "—" else Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).format(HM)
 
@@ -411,6 +418,7 @@ private fun PhoneScreen(app: EscribaWearApp, actions: WatchActions) {
             else -> {
                 (state as? PairingState.Failed)?.reason?.let { note(spec, it) }
                 note(spec, peer?.let { "Emparejado con ${it.name}" } ?: "Sin emparejar: el reloj no envía nada.")
+                if (lost) note(spec, "El móvil ya no reconoce este emparejamiento (¿se borraron sus datos?). Vuelve a emparejar para seguir enviando.")
                 if (peer != null) {
                     note(
                         spec,
@@ -419,7 +427,7 @@ private fun PhoneScreen(app: EscribaWearApp, actions: WatchActions) {
                     )
                     action(spec, "Enviar ahora", primary = true, onClick = actions.sendNow)
                 }
-                action(spec, if (peer == null) "Emparejar" else "Volver a emparejar", primary = peer == null) {
+                action(spec, if (peer == null) "Emparejar" else "Volver a emparejar", primary = peer == null || lost) {
                     scope.launch {
                         runCatching { app.pairing.startAsWatch() }.onFailure { AppLog.e("enlace", "No se pudo iniciar el emparejamiento", it) }
                     }

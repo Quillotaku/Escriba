@@ -21,6 +21,8 @@ object Protocol {
     const val PATH_PAIR_REPLY = "$ROOT/pair/reply"
     const val PATH_PAIR_REVEAL = "$ROOT/pair/reveal"
     const val PATH_PAIR_CONFIRM = "$ROOT/pair/confirm"
+    /** En claro y vacío: «no tengo enlace contigo» (p. ej. tras borrar los datos de la app). */
+    const val PATH_PAIR_UNKNOWN = "$ROOT/pair/desconocido"
     const val PATH_PROFILES = "$ROOT/perfiles"
     const val PATH_PROFILES_REQUEST = "$ROOT/perfiles/pedir"
     const val PATH_STATUS = "$ROOT/estado"

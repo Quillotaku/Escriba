@@ -176,13 +176,44 @@ class DataLayerLink(
             }
 
             else -> {
+                // Un mensaje cifrado de quien no está emparejado con nosotros: se descarta y se le
+                // avisa, para que el otro lado sepa que hay que volver a emparejar.
+                if (event.path !in PLAIN_PATHS) {
+                    val paired = keys.peer.value
+                    if (paired == null || paired.nodeId != event.sourceNodeId) {
+                        AppLog.i(TAG, "Mensaje ${event.path} de un nodo sin enlace: se descarta")
+                        reportUnknown(event.sourceNodeId)
+                        return
+                    }
+                }
                 val handler = handlers[event.path]
                 if (handler == null) AppLog.i(TAG, "Mensaje no atendido: ${event.path}") else handler(event)
             }
         }
     }
 
+    private val lastUnknownReport = ConcurrentHashMap<String, Long>()
+
+    /**
+     * Avisa a [nodeId] de que no tenemos enlace con él. Solo a nodos cercanos y como mucho una
+     * vez por minuto. El aviso no lleva nada secreto y no borra claves: el otro lado solo lo muestra.
+     */
+    suspend fun reportUnknown(nodeId: String) {
+        val now = System.currentTimeMillis()
+        val last = lastUnknownReport[nodeId] ?: 0L
+        if (now - last < 60_000) return
+        lastUnknownReport[nodeId] = now
+        runCatching { sendPlain(nodeId, Protocol.PATH_PAIR_UNKNOWN, ByteArray(0)) }
+            .onFailure { AppLog.e(TAG, "No se pudo avisar de que no hay enlace", it) }
+    }
+
     private companion object {
         const val TAG = "link"
+
+        /** Rutas que viajan en claro (todo lo demás exige enlace). */
+        val PLAIN_PATHS = setOf(
+            Protocol.PATH_PAIR_INIT, Protocol.PATH_PAIR_REPLY, Protocol.PATH_PAIR_REVEAL,
+            Protocol.PATH_PAIR_CONFIRM, Protocol.PATH_PAIR_UNKNOWN,
+        )
     }
 }

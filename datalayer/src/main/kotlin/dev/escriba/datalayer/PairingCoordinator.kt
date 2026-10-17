@@ -34,6 +34,14 @@ class PairingCoordinator(
     private val _state = MutableStateFlow<PairingState>(PairingState.Idle)
     val state: StateFlow<PairingState> = _state
 
+    private val _peerLost = MutableStateFlow(false)
+
+    /**
+     * El dispositivo emparejado dice que ya no nos reconoce (borró sus datos o se emparejó con
+     * otro). No se borra nada: la UI pide volver a emparejar.
+     */
+    val peerLost: StateFlow<Boolean> = _peerLost
+
     private var initiator: Pairing.Initiator? = null
     private var responder: Pairing.Responder? = null
     private var result: Pairing.Result? = null
@@ -54,6 +62,12 @@ class PairingCoordinator(
             link.handle(Protocol.PATH_PAIR_REVEAL, ::onReveal)
         }
         link.handle(Protocol.PATH_PAIR_CONFIRM, ::onConfirm)
+        link.handle(Protocol.PATH_PAIR_UNKNOWN) { event ->
+            if (event.sourceNodeId == link.keys.peer.value?.nodeId && !_peerLost.value) {
+                AppLog.e(TAG, "El ${if (isWatch) "móvil" else "reloj"} ya no reconoce el emparejamiento: hay que volver a emparejar")
+                _peerLost.value = true
+            }
+        }
     }
 
     /** Reloj: empieza el emparejamiento con el móvil cercano. */
@@ -146,6 +160,7 @@ class PairingCoordinator(
         if (!localConfirmed || !peerConfirmed) return
         val peer = PairedPeer(node, peerName, r.keyId, System.currentTimeMillis())
         link.keys.save(peer, r.key)
+        _peerLost.value = false
         AppLog.i(TAG, "Emparejado con $peerName (clave ${r.keyId})")
         reset()
         _state.value = PairingState.Done(peer)

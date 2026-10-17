@@ -28,3 +28,8 @@ docs/phase2-results.md
 docs/security.md
 docs/testing.md
 /design-system/
+
+# Release signing: never in the repository
+keystore.properties
+*.jks
+*.keystore

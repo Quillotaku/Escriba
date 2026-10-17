@@ -16,7 +16,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.produceState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -67,7 +74,7 @@ class SystemActions(
     val openAppSettings: () -> Unit,
 )
 
-enum class SettingsPage { WATCH, VAULT, VOICES, MODELS, BENCHMARK, STORAGE, BATTERY, LOG }
+enum class SettingsPage { WATCH, VAULT, VOICES, MODELS, BENCHMARK, STORAGE, BATTERY, LOG, LICENSES }
 
 /** Scrolling column with the system's margins. */
 @Composable
@@ -125,6 +132,8 @@ fun SettingsScreen(app: EscribaApp, padding: PaddingValues, open: (SettingsPage)
         }
         EsCard {
             SettingRow(Icons.Rounded.PlayArrow, stringResource(R.string.tour), stringResource(R.string.tour_hint), onClick = { app.onboarding.restart() })
+            HorizontalDivider(color = c.rule)
+            SettingRow(Icons.Rounded.Info, stringResource(R.string.settings_licenses), stringResource(R.string.settings_licenses_hint, versionName()), onClick = { open(SettingsPage.LICENSES) })
         }
     }
 }
@@ -300,3 +309,65 @@ private val PairingFailure.text: Int
         PairingFailure.COMMITMENT_MISMATCH -> R.string.pairing_failed_commitment
         PairingFailure.BAD_CONFIRMATION -> R.string.pairing_failed_confirmation
     }
+
+// --- Licenses ----------------------------------------------------------------
+
+/** A component distributed inside the app, with the asset holding its license text. */
+private data class ThirdParty(val name: String, val license: String, val file: String?)
+
+private val THIRD_PARTY = listOf(
+    ThirdParty("Escriba", "Apache-2.0", "Apache-2.0.txt"),
+    ThirdParty("whisper.cpp · ggml", "MIT", "MIT-whisper.cpp.txt"),
+    ThirdParty("llama.cpp · ggml", "MIT", "MIT-llama.cpp.txt"),
+    ThirdParty("sherpa-onnx", "Apache-2.0", "Apache-2.0.txt"),
+    ThirdParty("ONNX Runtime", "MIT", "MIT-onnxruntime.txt"),
+    ThirdParty("AndroidX · Jetpack Compose · Room · WorkManager · Wear OS libraries", "Apache-2.0", "Apache-2.0.txt"),
+    ThirdParty("Kotlin · kotlinx.coroutines · kotlinx.serialization", "Apache-2.0", "Apache-2.0.txt"),
+    ThirdParty("Material icons", "Apache-2.0", "Apache-2.0.txt"),
+    ThirdParty("Google Play services (Wearable)", "Android SDK License", null),
+    ThirdParty("Literata", "SIL Open Font License 1.1", "OFL-literata.txt"),
+    ThirdParty("Atkinson Hyperlegible Next", "SIL Open Font License 1.1", "OFL-atkinson-next.txt"),
+    ThirdParty("Atkinson Hyperlegible Mono", "SIL Open Font License 1.1", "OFL-atkinson-mono.txt"),
+)
+
+@Composable
+private fun versionName(): String {
+    val context = LocalContext.current
+    return remember { runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull().orEmpty() }
+}
+
+@Composable
+fun LicensesPage(padding: PaddingValues) {
+    val c = Escriba.colors
+    val context = LocalContext.current
+    var open by remember { mutableStateOf<ThirdParty?>(null) }
+    Page(padding) {
+        Text(stringResource(R.string.licenses_intro, versionName()), style = MaterialTheme.typography.bodyLarge, color = c.inkMuted)
+        EsCard {
+            THIRD_PARTY.forEachIndexed { i, t ->
+                if (i > 0) HorizontalDivider(color = c.rule)
+                SettingRow(Icons.Rounded.Info, t.name, t.license, onClick = { open = t })
+            }
+        }
+        Text(stringResource(R.string.licenses_models), style = MaterialTheme.typography.bodyMedium, color = c.inkMuted)
+    }
+    open?.let { t ->
+        val text by produceState<String?>(null, t) {
+            value = t.file?.let { name -> withContext(Dispatchers.IO) { runCatching { context.assets.open(name).bufferedReader().use { it.readText() } }.getOrNull() } }
+        }
+        AlertDialog(
+            onDismissRequest = { open = null },
+            title = { Text(t.name) },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text(
+                        text ?: stringResource(if (t.file == null) R.string.licenses_play_services else R.string.loading),
+                        style = Escriba.type.time.copy(fontSize = 11.sp, lineHeight = 15.sp, fontWeight = FontWeight.Normal),
+                        color = c.ink,
+                    )
+                }
+            },
+            confirmButton = { TextButton(onClick = { open = null }) { Text(stringResource(R.string.close)) } },
+        )
+    }
+}

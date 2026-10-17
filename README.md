@@ -7,7 +7,7 @@ Escriba turns a Wear OS watch and an Android phone into a Plaud-style conversati
 who's speaking, summarizes with an LLM and writes each conversation as an Obsidian note with its
 summary, decisions, tasks and transcript. No Internet, no accounts and no cloud.
 
-> Version 1.0.0 · Android 15+ (arm64) and Wear OS 5+ · English interface
+> Version 1.1.0 · Android 15+ (arm64) and Wear OS 5+ · English interface
 
 ## What it does
 
@@ -55,15 +55,22 @@ reads about 64 tokens/s and writes about 15 tokens/s.
 
 ## Installation
 
-There are no published APKs yet: they're built from source.
+### Download
 
-### 1. Tools
+Each [release](https://github.com/Quillotaku/Escriba/releases) has two APKs, `escriba-phone-<version>.apk`
+and `escriba-watch-<version>.apk`, with their SHA-256. Both are signed with the same key, which the
+Data Layer requires. The watch app isn't in the Play Store: it's installed with `adb` (see
+[Install](#4-install) below). To build them yourself, follow the steps below.
+
+### Building from source
+
+#### 1. Tools
 
 - A recent **Android Studio** (its JDK, the JBR, is the one used to build).
 - **Android SDK 37**, **NDK 30.0.16248370** and **CMake 4.1.2** (SDK Manager → SDK Tools).
 - **git** and **adb** (it comes with the SDK).
 
-### 2. Code
+#### 2. Code
 
 ```bash
 git clone --recurse-submodules https://github.com/Quillotaku/Escriba.git escriba
@@ -77,7 +84,7 @@ without `--recurse-submodules`:
 git submodule update --init --recursive
 ```
 
-### 3. Build
+#### 3. Build
 
 ```bash
 ./gradlew :mobile:assembleRelease :wear:assembleRelease
@@ -86,11 +93,22 @@ git submodule update --init --recursive
 The first time, Gradle downloads the sherpa-onnx AAR from its official releases and checks its
 SHA-256 (the `:mobile:downloadSherpaOnnx` task).
 
-Both apps are signed with the debug key **on purpose**: the Data Layer only connects apps with the
-same id (`dev.escriba`) and the same signature. If you sign them with your own key, sign both with
-the same one.
+Release builds are signed with the key described in a `keystore.properties` file at the project
+root, which never goes in the repository:
 
-### 4. Install
+```properties
+storeFile=C:/path/to/escriba-release.jks
+storePassword=…
+keyAlias=escriba
+keyPassword=…
+```
+
+Without that file they're signed with your debug key, which is fine for trying it out. Either way,
+**the phone and the watch must be signed with the same key**: the Data Layer only connects apps with
+the same id (`dev.escriba`) and the same signature. An app signed with another key can't be updated
+over the installed one: it has to be uninstalled first, which deletes its data.
+
+#### 4. Install
 
 Turn on wireless debugging on the phone and the watch (Developer options) and:
 
@@ -255,6 +273,7 @@ Include:
 - [whisper.cpp](https://github.com/ggml-org/whisper.cpp) and [llama.cpp](https://github.com/ggml-org/llama.cpp) (MIT).
 - [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) (Apache-2.0): Parakeet, diarization and voiceprints.
 - The [Literata](https://github.com/googlefonts/literata) and [Atkinson Hyperlegible Next and Mono](https://www.brailleinstitute.org/freefont/) fonts (SIL Open Font License; licenses in [`docs/licenses`](docs/licenses)).
+- All these licenses are also inside the app: Settings → Open source licenses.
 - The models (Whisper, Gemma, Qwen, Parakeet, pyannote, 3D-Speaker) have their own licenses.
 
 ## License

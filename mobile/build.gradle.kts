@@ -1,5 +1,6 @@
 import java.net.URI
 import java.security.MessageDigest
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
@@ -13,6 +14,15 @@ plugins {
 val SHERPA_VERSION = "1.13.8"
 val SHERPA_SHA256 = "633c24321e06b1fe79feafa03ea16cbc0f8a286641e2da3559bac91bdb13bd96"
 
+/**
+ * Release signing: the key is read from keystore.properties at the project root, which never goes
+ * in the repository. Without it, release builds are signed with the debug key so forks still build.
+ * Phone and watch must share the key: the Data Layer only connects apps with the same signature.
+ */
+val releaseKey = rootProject.file("keystore.properties").takeIf { it.exists() }?.let { file ->
+    Properties().apply { file.inputStream().use(::load) }
+}
+
 android {
     namespace = "dev.escriba.mobile"
     compileSdk = 37
@@ -22,11 +32,25 @@ android {
         applicationId = "dev.escriba"
         minSdk = 35
         targetSdk = 36
-        versionCode = 100
-        versionName = "1.0.0"
+        versionCode = 110
+        versionName = "1.1.0"
         // arm64 only: without this, sherpa-onnx's libraries for four architectures would be packaged.
         ndk { abiFilters += "arm64-v8a" }
     }
+
+    signingConfigs {
+        if (releaseKey != null) {
+            create("release") {
+                storeFile = rootProject.file(releaseKey.getProperty("storeFile"))
+                storePassword = releaseKey.getProperty("storePassword")
+                keyAlias = releaseKey.getProperty("keyAlias")
+                keyPassword = releaseKey.getProperty("keyPassword")
+            }
+        }
+    }
+
+    // Third-party licenses go inside the APK, as their licenses require when distributing binaries.
+    sourceSets["main"].assets.srcDir("$rootDir/docs/licenses")
 
     buildTypes {
         debug {
@@ -38,8 +62,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Same signature as the watch (the debug one): the Data Layer only links apps that share it.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName(if (releaseKey != null) "release" else "debug")
         }
     }
 

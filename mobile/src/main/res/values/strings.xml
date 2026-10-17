@@ -332,6 +332,12 @@
     <string name="tour_ready_lead">You can now record from the watch: the app\'s button, the Tile or the complication. The notes will show up in your vault.</string>
     <string name="tour_ready_hint">What\'s pending can be done later in Settings, and this tour can be repeated from Settings → Welcome tour.</string>
 
+    <string name="settings_licenses">Open source licenses</string>
+    <string name="settings_licenses_hint">Escriba %1$s and the components it includes</string>
+    <string name="licenses_intro">Escriba %1$s is free software under the Apache License 2.0. It includes these components, each under its own license.</string>
+    <string name="licenses_models">The speech and language models are not included: you download them yourself, and each one has its own license or terms of use.</string>
+    <string name="licenses_play_services">Google Play services is distributed by Google under the Android Software Development Kit License Agreement: developer.android.com/studio/terms</string>
+
     <!-- Plurals -->
     <plurals name="conversations">
         <item quantity="one">%d conversation</item>

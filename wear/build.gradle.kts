@@ -1,7 +1,18 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+}
+
+/**
+ * Release signing: the key is read from keystore.properties at the project root, which never goes
+ * in the repository. Without it, release builds are signed with the debug key so forks still build.
+ * Phone and watch must share the key: the Data Layer only connects apps with the same signature.
+ */
+val releaseKey = rootProject.file("keystore.properties").takeIf { it.exists() }?.let { file ->
+    Properties().apply { file.inputStream().use(::load) }
 }
 
 android {
@@ -13,9 +24,23 @@ android {
         applicationId = "dev.escriba"
         minSdk = 34
         targetSdk = 36
-        versionCode = 100
-        versionName = "1.0.0"
+        versionCode = 110
+        versionName = "1.1.0"
     }
+
+    signingConfigs {
+        if (releaseKey != null) {
+            create("release") {
+                storeFile = rootProject.file(releaseKey.getProperty("storeFile"))
+                storePassword = releaseKey.getProperty("storePassword")
+                keyAlias = releaseKey.getProperty("keyAlias")
+                keyPassword = releaseKey.getProperty("keyPassword")
+            }
+        }
+    }
+
+    // Third-party licenses go inside the APK, as their licenses require when distributing binaries.
+    sourceSets["main"].assets.srcDir("$rootDir/docs/licenses")
 
     buildTypes {
         release {
@@ -23,8 +48,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Same signature as the phone (the debug one): the Data Layer only links apps that share it.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName(if (releaseKey != null) "release" else "debug")
         }
     }
 

@@ -46,6 +46,7 @@ import dev.escriba.mobile.ui.settings.ModelsPage
 import dev.escriba.mobile.ui.settings.ProfileEditorPage
 import dev.escriba.mobile.ui.settings.StoragePage
 import dev.escriba.mobile.ui.settings.VaultPage
+import dev.escriba.mobile.ui.settings.LicensesPage
 import dev.escriba.mobile.ui.settings.LogPage
 import dev.escriba.mobile.ui.settings.SettingsPage
 import dev.escriba.mobile.ui.settings.SettingsScreen
@@ -136,6 +137,7 @@ private fun title(route: Route): Int? = when (route) {
         SettingsPage.STORAGE -> R.string.settings_storage
         SettingsPage.BATTERY -> R.string.settings_battery
         SettingsPage.LOG -> R.string.settings_log
+        SettingsPage.LICENSES -> R.string.settings_licenses
     }
 }
 
@@ -236,6 +238,7 @@ fun AppRoot(app: EscribaApp, actions: SystemActions) {
                         SettingsPage.STORAGE -> StoragePage(app, padding)
                         SettingsPage.BATTERY -> BatteryPage(actions, padding)
                         SettingsPage.LOG -> LogPage(padding)
+                        SettingsPage.LICENSES -> LicensesPage(padding)
                     }
                 }
             },

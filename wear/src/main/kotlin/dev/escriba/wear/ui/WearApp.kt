@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -76,7 +77,9 @@ import dev.escriba.wear.recorder.RecorderSettings
 import dev.escriba.wear.recorder.RecordingMode
 import dev.escriba.wear.recorder.RecordingState
 import dev.escriba.wear.transfer.UploadWorker
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalTime
@@ -210,24 +213,18 @@ private fun HomeScreen(app: EscribaWearApp, actions: WatchActions, open: (Screen
     val ambientManager = LocalAmbientModeManager.current
     val ambient = ambientManager?.currentAmbientMode is AmbientMode.Ambient
 
-    // El reloj de la sesión: cada segundo en interactivo, cada minuto en ambiente.
-    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    ambientManager?.AmbientTickEffect { now = System.currentTimeMillis() }
-    if (!ambient) {
-        LaunchedEffect(Unit) {
-            while (true) {
-                now = System.currentTimeMillis()
-                delay(1_000)
-            }
-        }
-    }
-    var pending by remember { mutableStateOf(app.store.stats()) }
-    var battery by remember { mutableStateOf(actions.batteryNow()) }
+    // Pendientes y batería: leer el disco en el hilo principal hacía ir a tirones la interfaz.
+    var pending by remember { mutableIntStateOf(0) }
+    var battery by remember { mutableStateOf<Float?>(null) }
     LaunchedEffect(Unit) {
         while (true) {
-            pending = app.store.stats()
-            battery = actions.batteryNow()
-            delay(5_000)
+            withContext(Dispatchers.IO) {
+                val fragments = app.store.stats().fragments
+                val level = actions.batteryNow()
+                pending = fragments
+                battery = level
+            }
+            delay(10_000)
         }
     }
 
@@ -249,11 +246,7 @@ private fun HomeScreen(app: EscribaWearApp, actions: WatchActions, open: (Screen
                 }
                 when {
                     recording -> {
-                        Text(
-                            elapsed(now - live.startedAtMs, seconds = !ambient),
-                            style = TextStyle(fontFamily = WatchMono, fontWeight = FontWeight.SemiBold, fontSize = 30.sp, lineHeight = 34.sp),
-                            color = if (ambient) WatchColors.inkMuted else WatchColors.ink,
-                        )
+                        ElapsedClock(live.startedAtMs, ambient)
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             RecDot(animate = !ambient)
                             Text(if (live.inSpeech) "Oyendo voz" else "Escuchando", style = MaterialTheme.typography.bodySmall, color = WatchColors.inkMuted)
@@ -272,7 +265,7 @@ private fun HomeScreen(app: EscribaWearApp, actions: WatchActions, open: (Screen
                 if (!ambient) {
                     Text(
                         listOfNotNull(
-                            if (peer == null) "Sin emparejar" else if (pending.fragments > 0) "${pending.fragments} por enviar" else "Todo enviado",
+                            if (peer == null) "Sin emparejar" else if (pending > 0) "$pending por enviar" else "Todo enviado",
                             battery?.let { "${it.toInt()} %" },
                         ).joinToString(" · "),
                         style = MaterialTheme.typography.bodySmall, color = WatchColors.inkMuted,
@@ -296,6 +289,29 @@ private fun HomeScreen(app: EscribaWearApp, actions: WatchActions, open: (Screen
             action(spec, "Diagnóstico", icon = WatchIcons.Lines) { open(Screen.DIAGNOSTICS) }
         }
     }
+}
+
+/**
+ * Tiempo grabado. Es el único elemento que cambia cada segundo, así que lleva su propio tic y
+ * no obliga a recomponer el resto de la pantalla. En ambiente, un tic por minuto y sin segundos.
+ */
+@Composable
+private fun ElapsedClock(startedAtMs: Long, ambient: Boolean) {
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LocalAmbientModeManager.current?.AmbientTickEffect { now = System.currentTimeMillis() }
+    if (!ambient) {
+        LaunchedEffect(startedAtMs) {
+            while (true) {
+                now = System.currentTimeMillis()
+                delay(1_000 - now % 1_000)
+            }
+        }
+    }
+    Text(
+        elapsed(now - startedAtMs, seconds = !ambient),
+        style = TextStyle(fontFamily = WatchMono, fontWeight = FontWeight.SemiBold, fontSize = 30.sp, lineHeight = 34.sp),
+        color = if (ambient) WatchColors.inkMuted else WatchColors.ink,
+    )
 }
 
 /** Botón redondo de 72 dp: contorno minio para grabar, relleno minio mientras graba. */

@@ -19,7 +19,12 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // Compose sin optimizar va a tirones en el reloj: en release, R8 lo compila de verdad.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // Misma firma que el móvil (la de depuración): la Data Layer solo une apps con la misma.
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 
@@ -38,6 +43,8 @@ dependencies {
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
+    // Los servicios de Google traen un fragment antiguo que rompe los permisos con ActivityResult.
+    implementation(libs.androidx.fragment)
     implementation(libs.androidx.lifecycle.runtime.compose)
 
     implementation(platform(libs.compose.bom))
@@ -52,6 +59,7 @@ dependencies {
 
     implementation(libs.wear.tiles)
     implementation(libs.wear.protolayout)
+    implementation(libs.wear.protolayout.material3)
     implementation(libs.wear.protolayout.expression)
     implementation(libs.concurrent.futures.ktx)
     implementation(libs.wear.ongoing)

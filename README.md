@@ -37,8 +37,8 @@ summary, decisions, tasks and transcript. No Internet, no accounts and no cloud.
 - Android backups are disabled.
 - Audio is deleted from the phone 7 days after the note is written (configurable) and, if the
   profile saves it in the vault, after the days the profile says.
-
-More detail in [`docs/security.md`](docs/security.md).
+- Exported components are protected: only the system can bind the Tile and the complication, and
+  the watch listener only accepts encrypted messages from the paired phone.
 
 ## Requirements
 
@@ -66,7 +66,7 @@ There are no published APKs yet: they're built from source.
 ### 2. Code
 
 ```bash
-git clone --recurse-submodules <repository-url> escriba
+git clone --recurse-submodules https://github.com/Quillotaku/Escriba.git escriba
 cd escriba
 ```
 
@@ -199,8 +199,7 @@ no `## Prompt` inherits its parent's.
 | `wear` | The watch app: recording, fragment storage, sending, Tile, complication. |
 | `mobile` | The phone app: inbox, Room, transcription, diarization, summary, notes, UI. |
 
-The architecture and each phase's decisions are in [`docs/architecture.md`](docs/architecture.md);
-the study of alternatives, in [`docs/alternatives.md`](docs/alternatives.md). The design system
+The design system
 (colours, typography, components) is documented separately and applied with `EscribaTheme` on the
 phone and `EscribaWearTheme` on the watch.
 
@@ -212,7 +211,8 @@ phone and `EscribaWearTheme` on the watch.
 
 Everything runs on the PC (JUnit and Robolectric). **Don't run `connectedAndroidTest` on the phone
 you use every day**: it uninstalls the app when it finishes and wipes the database, the pending
-audio and the pairing. Details in [`docs/testing.md`](docs/testing.md).
+audio and the pairing. Room's schemas are in `mobile/schemas`; `MigrationTest` checks the whole
+migration chain.
 
 ### Guidelines
 
@@ -247,7 +247,8 @@ Include:
 2. Make the changes with their tests (`shared` or `mobile/src/test`) and check that everything passes.
 3. Build both apps in release and test them paired on real devices if you touch the link, recording
    or the UI.
-4. Open a pull request explaining what and why; if the UI changes, with screenshots.
+4. Open a pull request explaining what and why; if the UI changes, with screenshots. By opening it,
+   you agree that your contribution is licensed under the Apache License 2.0.
 
 ## Credits
 
@@ -258,4 +259,8 @@ Include:
 
 ## License
 
-To be chosen.
+Escriba is licensed under the [Apache License 2.0](LICENSE). Contributions are accepted under the
+same license (section 5 of the license).
+
+The libraries it depends on keep their own licenses (MIT, Apache-2.0, OFL; see Credits), as do the
+models, which aren't distributed with the app.

@@ -21,11 +21,10 @@ captures/
 spike-out/
 # Downloaded binary libraries (sherpa-onnx): they don't go in the repository
 *.aar
-docs/alternativas.md
-docs/arquitectura.md
-docs/fase1-spikes.md
-docs/fase2-resultados.md
-docs/seguridad.md
+docs/alternatives.md
+docs/architecture.md
+docs/phase1-spikes.md
+docs/phase2-results.md
+docs/security.md
 docs/testing.md
-# Design system files to publish by hand (not part of the app)
 /design-system/

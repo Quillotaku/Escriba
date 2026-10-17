@@ -46,6 +46,9 @@ dependencies {
     debugImplementation(libs.compose.ui.tooling)
     implementation(libs.wear.compose.material3)
     implementation(libs.wear.compose.foundation)
+    implementation(libs.wear.compose.navigation3)
+    implementation(libs.navigation3.runtime)
+    implementation(libs.navigation3.ui)
 
     implementation(libs.wear.tiles)
     implementation(libs.wear.protolayout)

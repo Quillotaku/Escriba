@@ -42,7 +42,6 @@ import androidx.compose.ui.unit.dp
 import dev.escriba.mobile.ui.theme.Escriba
 import dev.escriba.mobile.ui.theme.EscribaColors
 import dev.escriba.mobile.ui.theme.Space
-import kotlin.math.abs
 
 // --- StatusChip --------------------------------------------------------------
 
@@ -80,19 +79,8 @@ fun StatusChip(text: String, tone: Tone, modifier: Modifier = Modifier, icon: Im
 // --- ProfileChip -------------------------------------------------------------
 
 /** El color de perfil más cercano de los seis del sistema a un color de la bóveda (`#2E7D32`). */
-fun EscribaColors.profileColor(hex: String?): Color {
-    val rgb = hex?.removePrefix("#")?.takeIf { it.length == 6 }?.toLongOrNull(16) ?: return inkMuted
-    // Se compara con la paleta clara, que es la que imita los colores que escribe la gente.
-    val light = dev.escriba.mobile.ui.theme.LightColors.profiles
-    val index = light.indices.minBy { i ->
-        val p = light[i]
-        val r = ((rgb shr 16) and 0xff) / 255f
-        val g = ((rgb shr 8) and 0xff) / 255f
-        val b = (rgb and 0xff) / 255f
-        abs(p.red - r) * 3 + abs(p.green - g) * 4 + abs(p.blue - b) * 2
-    }
-    return profiles[index]
-}
+fun EscribaColors.profileColor(hex: String?): Color =
+    dev.escriba.shared.vault.ProfilePalette.nearest(hex)?.let { profiles[it] } ?: inkMuted
 
 @Composable
 fun ProfileDot(color: Color, modifier: Modifier = Modifier) {

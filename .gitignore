@@ -27,3 +27,5 @@ docs/fase1-spikes.md
 docs/fase2-resultados.md
 docs/seguridad.md
 docs/testing.md
+# Design system files to publish by hand (not part of the app)
+/design-system/

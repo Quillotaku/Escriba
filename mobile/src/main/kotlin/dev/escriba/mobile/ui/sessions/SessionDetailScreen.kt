@@ -216,11 +216,19 @@ fun SessionDetailScreen(app: EscribaApp, sessionId: String, focus: Int, padding:
                             }
                         }
                     }
-                    if (note != null) {
+                    // El audio de la bóveda si el perfil lo guarda; si no, el del móvil mientras no
+                    // lo borre la retención (7 días tras escribir la nota, por defecto).
+                    val vaultAudio = note?.audioPath?.takeIf { note.audioDeletedAtMs == null }
+                    val phoneAudio = if (s.audioDeletedAtMs == null) {
+                        fragments.filter { it.endMs > conv.startMs && it.startMs < conv.endMs }.sortedBy { it.seq }.map { java.io.File(it.path) }.filter { it.exists() }
+                    } else emptyList()
+                    if (note != null || phoneAudio.isNotEmpty()) {
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
-                            val audio = note.audioPath?.takeIf { note.audioDeletedAtMs == null }
-                            if (audio != null) AudioButton(app, audio)
-                            OpenInObsidian(app, note.path)
+                            when {
+                                vaultAudio != null -> AudioButton(app, AudioSource.Vault(vaultAudio))
+                                phoneAudio.isNotEmpty() -> AudioButton(app, AudioSource.Phone(phoneAudio))
+                            }
+                            if (note != null) OpenInObsidian(app, note.path)
                         }
                     }
                     if (own.isNotEmpty()) TranscriptBlock(paragraphs(own, labeled.second))
@@ -252,14 +260,23 @@ fun SessionDetailScreen(app: EscribaApp, sessionId: String, focus: Int, padding:
     }
 }
 
-/** Reproduce el audio de la conversación guardado en la bóveda. */
+/** De dónde sale el audio de una conversación. */
+private sealed interface AudioSource {
+    /** El `.ogg` junto a la nota, en la bóveda. */
+    data class Vault(val path: String) : AudioSource
+
+    /** Los fragmentos recibidos del reloj, en orden: se reproducen uno tras otro. */
+    data class Phone(val files: List<java.io.File>) : AudioSource
+}
+
+/** Reproduce el audio de la conversación, de la bóveda o del móvil. */
 @Composable
-private fun AudioButton(app: EscribaApp, path: String) {
+private fun AudioButton(app: EscribaApp, source: AudioSource) {
     val context = LocalContext.current
     var player by remember { mutableStateOf<MediaPlayer?>(null) }
     var playing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    DisposableEffect(path) {
+    DisposableEffect(source) {
         onDispose {
             player?.release()
             player = null
@@ -271,19 +288,35 @@ private fun AudioButton(app: EscribaApp, path: String) {
             p != null && playing -> { p.pause(); playing = false }
             p != null -> { p.start(); playing = true }
             else -> scope.launch {
-                val uri = withContext(Dispatchers.IO) { app.vault.uri(path) }
-                if (uri == null) {
-                    AppLog.e("ui", "No se encuentra el audio $path en la bóveda")
+                val uris = withContext(Dispatchers.IO) {
+                    when (source) {
+                        is AudioSource.Vault -> listOfNotNull(app.vault.uri(source.path))
+                        is AudioSource.Phone -> source.files.map { android.net.Uri.fromFile(it) }
+                    }
+                }
+                if (uris.isEmpty()) {
+                    AppLog.e("ui", "No se encuentra el audio de la conversación")
                     return@launch
                 }
-                runCatching {
-                    MediaPlayer().apply {
-                        setDataSource(context, uri)
-                        setOnCompletionListener { playing = false }
-                        prepare()
-                        start()
+                // Cada fragmento es su propio .ogg: al acabar uno, empieza el siguiente.
+                fun play(index: Int): MediaPlayer = MediaPlayer().apply {
+                    setDataSource(context, uris[index])
+                    setOnCompletionListener { done ->
+                        done.release()
+                        if (index + 1 < uris.size) {
+                            runCatching { play(index + 1) }
+                                .onSuccess { player = it }
+                                .onFailure { AppLog.e("ui", "No se pudo seguir con el audio", it); player = null; playing = false }
+                        } else {
+                            player = null
+                            playing = false
+                        }
                     }
-                }.onSuccess { player = it; playing = true }
+                    prepare()
+                    start()
+                }
+                runCatching { play(0) }
+                    .onSuccess { player = it; playing = true }
                     .onFailure { AppLog.e("ui", "No se pudo reproducir el audio", it) }
             }
         }

@@ -43,13 +43,15 @@ class Benchmark(
             runCatching {
                 val fragments = db.sessions().fragments(sessionId)
                 check(fragments.isNotEmpty()) { "La sesión no tiene fragmentos" }
-                transcriber.open(modelName, flashAttn).use { session ->
+                // Parakeet aparece en la lista con el nombre de su modelo.
+                val motor = if (modelName == ParakeetAsr.MODEL_NAME) Transcriber.Motor.PARAKEET else Transcriber.Motor.WHISPER
+                transcriber.open(modelName, flashAttn, motor).use { session ->
                     _state.value = State.Running("Transcribiendo ${fragments.size} fragmentos con $threads hilos…")
                     session.transcribe(fragments, language = "es", vocabulary = emptyList(), threads = threads, fast = fast)
                 }
             }.onSuccess {
                 // El desglose que imprime whisper.cpp (las últimas líneas con «time =»).
-                val timings = WhisperEngine.nativeLog().lines().filter { "time =" in it }.takeLast(8).joinToString("\n") { it.trim() }
+                val timings = if (it.stats.model == ParakeetAsr.MODEL_NAME) "" else WhisperEngine.nativeLog().lines().filter { "time =" in it }.takeLast(8).joinToString("\n") { it.trim() }
                 AppLog.i("transcripcion", "Desglose: " + timings.replace("\n", " | "))
                 _state.value = State.Done(it, timings)
             }.onFailure {

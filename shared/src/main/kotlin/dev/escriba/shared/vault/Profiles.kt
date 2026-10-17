@@ -21,6 +21,8 @@ data class Profile(
     val folder: String,
     val template: String?,
     val whisper: String,
+    /** «whisper» o «parakeet». */
+    val engine: String,
     val llm: String,
     val language: String,
     val vocabulary: List<String>,
@@ -106,13 +108,14 @@ object ProfileLoader {
     private val MODES = setOf("continuo", "bajo_demanda")
     private val VADS = setOf("baja", "media", "alta")
     private val LANGUAGES = setOf("es", "en", "auto")
+    private val ENGINES = setOf("whisper", "parakeet")
     private val LINKS = setOf("personas", "proyectos", "clientes")
     private val ID = Regex("[a-z0-9][a-z0-9_-]{0,39}")
     private val COLOR = Regex("#[0-9A-Fa-f]{6}")
 
     private val KNOWN = setOf(
         "version", "nombre", "hereda", "color", "icono", "favorito", "modo", "vad", "separar_tras_silencio", "carpeta",
-        "plantilla", "whisper", "llm", "idioma", "vocabulario", "diarizacion", "tareas", "enlazar", "descartar_triviales",
+        "plantilla", "whisper", "motor", "llm", "idioma", "vocabulario", "diarizacion", "tareas", "enlazar", "descartar_triviales",
         "guardar_audio", "retencion_audio", "redondeo", "nota_diaria", "cliente",
     )
 
@@ -191,6 +194,7 @@ object ProfileLoader {
             folder = p.text("carpeta", "Grabaciones/{{yyyy}}/{{MM}}").trim('/'),
             template = p.text("plantilla"),
             whisper = p.text("whisper", config.defaultWhisper),
+            engine = p.oneOf("motor", ENGINES, "whisper"),
             llm = p.text("llm", config.defaultLlm),
             language = p.oneOf("idioma", LANGUAGES, "es"),
             vocabulary = p.list("vocabulario"),

@@ -3,24 +3,20 @@ package dev.escriba.mobile.transcription
 import dev.escriba.datalayer.AppLog
 import dev.escriba.mobile.data.FragmentEntity
 import dev.escriba.nativeml.WhisperEngine
-import dev.escriba.shared.EscribaJson
-import dev.escriba.shared.Segment
 import dev.escriba.shared.transcription.Chunker
 import dev.escriba.shared.transcription.HallucinationFilter
-import dev.escriba.shared.transcription.Pcm
-import dev.escriba.shared.transcription.Timeline
 import dev.escriba.shared.transcription.TranscriptLine
 import java.io.Closeable
-import java.io.File
 
 /**
- * Transcribe conversaciones con whisper.cpp.
+ * Transcribe conversaciones con Whisper o con Parakeet.
  *
- * Une el audio de voz de todos los fragmentos de la conversación (Whisper procesa ventanas de
- * 30 s: transcribir fragmentos de pocos segundos por separado desperdiciaría casi todo el
- * cálculo) y traduce cada frase a su hora real con la tabla de segmentos.
+ * Une el audio de voz de todos los fragmentos de la conversación, lo trocea en bloques de ≤30 s
+ * cortados en los silencios y traduce cada frase a su hora real con la tabla de segmentos.
  */
 class Transcriber(private val models: ModelStore, private val slot: ModelSlot) {
+
+    enum class Motor { WHISPER, PARAKEET }
 
     data class Stats(
         val model: String,
@@ -33,7 +29,7 @@ class Transcriber(private val models: ModelStore, private val slot: ModelSlot) {
         val segmentsKept: Int,
         val flashAttn: Boolean,
         val fast: Boolean,
-        /** Suma de los bloques: codificador (ventanas de 30 s) y decodificador (texto). */
+        /** Suma de los bloques: codificador y decodificador (solo Whisper los da). */
         val encodeMs: Long,
         val decodeTextMs: Long,
     ) {
@@ -44,13 +40,8 @@ class Transcriber(private val models: ModelStore, private val slot: ModelSlot) {
     data class Result(val lines: List<TranscriptLine>, val stats: Stats)
 
     /** Modelo cargado para una tanda de trabajo; se libera con [Session.close]. */
-    inner class Session(
-        val modelName: String,
-        private val engine: WhisperEngine,
-        private val file: OpenModel,
-        val loadMs: Long,
-        private val flashAttn: Boolean,
-    ) : Closeable {
+    inner class Session(private val engine: AsrEngine, val loadMs: Long, private val flashAttn: Boolean) : Closeable {
+        val modelName: String get() = engine.name
 
         fun transcribe(
             fragments: List<FragmentEntity>,
@@ -60,96 +51,86 @@ class Transcriber(private val models: ModelStore, private val slot: ModelSlot) {
             fast: Boolean = false,
         ): Result {
             val decodeStart = System.currentTimeMillis()
-            val segments = ArrayList<Segment>()
-            val pieces = ArrayList<FloatArray>()
-            for (f in fragments.sortedBy { it.seq }) {
-                val pcm = AudioDecoder.decode(File(f.path))
-                pieces += pcm
-                // La tabla del reloj y el audio decodificado pueden diferir unos ms por el retardo
-                // del códec: se ajusta el último tramo para que la suma cuadre con el audio real.
-                val fragSegments = EscribaJson.decodeFromString<List<Segment>>(f.segmentsJson)
-                val declared = fragSegments.sumOf { it.durationMs }
-                val actual = pcm.size * 1000L / 16_000
-                segments += if (fragSegments.isNotEmpty() && declared != actual) {
-                    fragSegments.dropLast(1) + fragSegments.last().let { it.copy(durationMs = (it.durationMs + actual - declared).coerceAtLeast(0)) }
-                } else fragSegments
-            }
-            val pcm = Pcm.normalize(concat(pieces))
+            val audio = SpeechAudio.decode(fragments)
             val decodeMs = System.currentTimeMillis() - decodeStart
-            val timeline = Timeline(segments)
 
             // El vocabulario del perfil orienta a Whisper con nombres propios y jerga.
-            val prompt = vocabulary.takeIf { it.isNotEmpty() }?.joinToString(", ", postfix = ".")
+            val prompt = if (engine.supportsPrompt) vocabulary.takeIf { it.isNotEmpty() }?.joinToString(", ", postfix = ".") else null
 
             val transcribeStart = System.currentTimeMillis()
             val raw = ArrayList<HallucinationFilter.Input>()
             var encodeMs = 0f
             var decodeTextMs = 0f
             // Bloques de hasta 30 s cortados en los silencios: una sola pasada del codificador por bloque.
-            for (range in Chunker.plan(segments)) {
-                val from = (range.first * 16).toInt().coerceIn(0, pcm.size)
-                val to = ((range.last + 1) * 16).toInt().coerceIn(from, pcm.size)
+            for (range in Chunker.plan(audio.segments)) {
+                val from = (range.first * 16).toInt().coerceIn(0, audio.pcm.size)
+                val to = ((range.last + 1) * 16).toInt().coerceIn(from, audio.pcm.size)
                 if (to - from < MIN_CHUNK_SAMPLES) continue
-                val chunk = pcm.copyOfRange(from, to)
+                val chunk = audio.pcm.copyOfRange(from, to)
                 val chunkStartMs = range.first
-                engine.transcribe(chunk, language, prompt, threads, fast = fast).forEach {
+                engine.transcribe(chunk, language, prompt, threads, fast).forEach {
                     raw += HallucinationFilter.Input(chunkStartMs + it.startMs, chunkStartMs + it.endMs, it.noSpeechProb, it.text)
                 }
-                engine.timings()?.let {
-                    encodeMs += it.encodeMs
-                    decodeTextMs += it.decodeMs + it.batchMs + it.promptMs + it.sampleMs
+                engine.timings()?.let { (enc, dec) ->
+                    encodeMs += enc
+                    decodeTextMs += dec
                 }
             }
             val transcribeMs = System.currentTimeMillis() - transcribeStart
             val kept = HallucinationFilter.clean(raw)
-            val lines = kept.map { TranscriptLine(timeline.wallAt(it.startMs), timeline.wallAt(it.endMs), it.text) }
+            val lines = kept.map { TranscriptLine(audio.timeline.wallAt(it.startMs), audio.timeline.wallAt(it.endMs), it.text) }
 
             val stats = Stats(
-                modelName, pcm.size * 1000L / 16_000, loadMs, decodeMs, transcribeMs, threads, raw.size, kept.size,
+                engine.name, audio.durationMs, loadMs, decodeMs, transcribeMs, threads, raw.size, kept.size,
                 flashAttn, fast, encodeMs.toLong(), decodeTextMs.toLong(),
             )
-            AppLog.i(TAG, "Transcrito con $modelName: ${stats.audioMs / 1000} s de audio en ${transcribeMs / 1000} s " +
-                "(×%.2f del tiempo real, %d hilos, flash=%s, rápido=%s), %d/%d frases".format(
-                    stats.realTimeFactor, threads, flashAttn, fast, kept.size, raw.size,
-                ))
+            AppLog.i(TAG, "Transcrito con ${engine.name}: ${stats.audioMs / 1000} s de audio en ${transcribeMs / 1000} s " +
+                "(×%.2f del tiempo real, %d hilos), %d/%d frases".format(stats.realTimeFactor, threads, kept.size, raw.size))
             return Result(lines, stats)
         }
 
         override fun close() {
             engine.close()
-            file.close()
             slot.mutex.unlock()
         }
     }
 
-    /** Carga el modelo [name]. Solo hay un modelo cargado a la vez: los demás esperan. */
-    suspend fun open(name: String, flashAttn: Boolean = true): Session {
-        val entry = models.find(name) ?: error("No hay ningún modelo «$name» importado. Impórtalo en la pestaña «Modelos».")
+    /**
+     * Carga el motor. Para Whisper, [name] es el modelo (`large-v3-turbo-q8_0`); Parakeet tiene
+     * un único modelo. Solo hay un modelo grande cargado a la vez: los demás esperan.
+     */
+    suspend fun open(name: String, flashAttn: Boolean = true, motor: Motor = Motor.WHISPER): Session {
         slot.mutex.lock()
         try {
             val start = System.currentTimeMillis()
-            val file = models.open(entry)
-            val engine = runCatching { WhisperEngine.load(file.fd, entry.name, flashAttn) }.getOrElse {
-                file.close()
-                throw it
+            val engine: AsrEngine = when (motor) {
+                Motor.WHISPER -> {
+                    val entry = models.find(name) ?: error("No hay ningún modelo «$name» en la carpeta de modelos")
+                    val file = models.open(entry)
+                    val whisper = runCatching { WhisperEngine.load(file.fd, entry.name, flashAttn) }.getOrElse {
+                        file.close()
+                        throw it
+                    }
+                    WhisperAsr(whisper, file)
+                }
+                Motor.PARAKEET -> {
+                    val progress: (Long, Long) -> Unit = { c, t -> AppLog.i(TAG, "Copiando Parakeet a la app: $c/$t MB (solo la primera vez)") }
+                    ParakeetAsr(
+                        encoder = models.localPathOf(ParakeetAsr.ENCODER, progress),
+                        decoder = models.localPathOf(ParakeetAsr.DECODER),
+                        joiner = models.localPathOf(ParakeetAsr.JOINER),
+                        tokens = models.localPathOf(ParakeetAsr.TOKENS),
+                        threads = WhisperEngine.defaultThreads(),
+                    )
+                }
             }
             val loadMs = System.currentTimeMillis() - start
-            AppLog.i(TAG, "Modelo ${entry.name} cargado en ${loadMs} ms")
-            return Session(entry.name, engine, file, loadMs, flashAttn)
+            AppLog.i(TAG, "Motor ${engine.name} cargado en ${loadMs} ms")
+            return Session(engine, loadMs, flashAttn)
         } catch (e: Throwable) {
             slot.mutex.unlock()
             throw e
         }
-    }
-
-    private fun concat(pieces: List<FloatArray>): FloatArray {
-        val out = FloatArray(pieces.sumOf { it.size })
-        var pos = 0
-        for (p in pieces) {
-            p.copyInto(out, pos)
-            pos += p.size
-        }
-        return out
     }
 
     private companion object {

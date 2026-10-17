@@ -16,6 +16,8 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
+        // Solo el Honor (arm64): sin esto se empaquetarían las bibliotecas de sherpa-onnx de cuatro arquitecturas.
+        ndk { abiFilters += "arm64-v8a" }
     }
 
     buildTypes {
@@ -38,6 +40,9 @@ dependencies {
     implementation(project(":datalayer"))
     implementation(project(":native"))
     implementation(project(":llm"))
+    // sherpa-onnx 1.13.8 (Apache-2.0): diarización, huellas de voz y Parakeet. Se descarga de
+    // github.com/k2-fsa/sherpa-onnx/releases y no se sube al repositorio (ver docs/arquitectura.md).
+    implementation(files("libs/sherpa-onnx-1.13.8.aar"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

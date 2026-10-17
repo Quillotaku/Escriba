@@ -17,6 +17,8 @@ data class ModelEntry(val uri: String, val name: String, val sizeBytes: Long) {
     val kind: String get() = when {
         name.startsWith("ggml-") && name.endsWith(".bin") -> "whisper"
         name.endsWith(".gguf") -> "llm"
+        name.startsWith("parakeet") -> "parakeet"
+        name.endsWith(".onnx") -> "voz"
         else -> "otro"
     }
 }
@@ -68,7 +70,7 @@ class ModelStore(context: Context) {
                     while (c.moveToNext()) {
                         val name = c.getString(1) ?: continue
                         if (c.getString(3) == Document.MIME_TYPE_DIR) continue
-                        if (!(name.endsWith(".bin") || name.endsWith(".gguf") || name.endsWith(".onnx"))) continue
+                        if (!(name.endsWith(".bin") || name.endsWith(".gguf") || name.endsWith(".onnx") || (name.endsWith("tokens.txt")))) continue
                         add(ModelEntry(DocumentsContract.buildDocumentUriUsingTree(tree, c.getString(0)).toString(), name, c.getLong(2)))
                     }
                 }
@@ -98,6 +100,48 @@ class ModelStore(context: Context) {
             error("${entry.name} no se puede leer directamente desde esa carpeta")
         }
         return OpenModel(pfd.fd, pfd)
+    }
+
+    /**
+     * Ruta local de un modelo, copiándolo a la app la primera vez. sherpa-onnx solo abre modelos
+     * por ruta, y las rutas de Descargas exigen permiso de almacenamiento general (que Escriba no
+     * pide); su almacenamiento privado sí se puede leer por ruta. La copia se hace una vez y se
+     * rehace solo si el original cambia de tamaño.
+     */
+    fun localPath(entry: ModelEntry, onProgress: (copiedMb: Long, totalMb: Long) -> Unit = { _, _ -> }): String {
+        val dir = java.io.File(appContext.filesDir, "modelos").apply { mkdirs() }
+        val target = java.io.File(dir, entry.name)
+        if (target.exists() && target.length() == entry.sizeBytes) return target.absolutePath
+        val free = dir.usableSpace
+        check(free > entry.sizeBytes + 200L * 1024 * 1024) { "No hay espacio para copiar ${entry.name} (${entry.sizeBytes / 1_048_576} MB)" }
+        val tmp = java.io.File(dir, entry.name + ".part")
+        appContext.contentResolver.openInputStream(Uri.parse(entry.uri))?.use { input ->
+            tmp.outputStream().use { output ->
+                val buffer = ByteArray(1 shl 20)
+                var copied = 0L
+                var lastReport = 0L
+                while (true) {
+                    val n = input.read(buffer)
+                    if (n < 0) break
+                    output.write(buffer, 0, n)
+                    copied += n
+                    if (copied - lastReport > 64L * 1024 * 1024) {
+                        onProgress(copied / 1_048_576, entry.sizeBytes / 1_048_576)
+                        lastReport = copied
+                    }
+                }
+                output.fd.sync()
+            }
+        } ?: error("No se pudo leer ${entry.name}")
+        check(tmp.renameTo(target)) { "No se pudo guardar ${entry.name}" }
+        return target.absolutePath
+    }
+
+    /** Ruta local del modelo cuyo nombre es exactamente [name] (o error claro si falta). */
+    fun localPathOf(name: String, onProgress: (Long, Long) -> Unit = { _, _ -> }): String {
+        val entry = (_models.value.ifEmpty { refresh() }).firstOrNull { it.name == name }
+            ?: error("Falta $name en la carpeta de modelos")
+        return localPath(entry, onProgress)
     }
 
     private companion object {

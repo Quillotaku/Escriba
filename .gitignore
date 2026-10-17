@@ -19,3 +19,5 @@ captures/
 *.ogg
 *.wav
 spike-out/
+# Librerías binarias descargadas (sherpa-onnx): no van al repositorio
+*.aar

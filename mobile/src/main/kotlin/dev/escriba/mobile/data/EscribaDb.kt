@@ -98,6 +98,27 @@ data class InsightsEntity(
     val createdAtMs: Long,
 )
 
+/** Diarización de una sesión: tramos de cada hablante y la huella media de cada uno. */
+@Entity(tableName = "diarizations")
+data class DiarizationEntity(
+    @PrimaryKey val sessionId: String,
+    val turnsJson: String,
+    /** Hablante → huella (base64 de float32), en JSON. */
+    val embeddingsJson: String,
+    /** Hablante → ms de voz, en JSON. */
+    val speechMsJson: String,
+    val createdAtMs: Long,
+)
+
+/** Voz registrada por el usuario. Dato biométrico: solo en esta base de datos privada. */
+@Entity(tableName = "voices")
+data class VoiceEntity(
+    @PrimaryKey val name: String,
+    val embedding: String,
+    val samples: Int,
+    val updatedAtMs: Long,
+)
+
 @Dao
 interface SessionDao {
     @Query("SELECT * FROM sessions ORDER BY startMs DESC")
@@ -182,17 +203,45 @@ interface SessionDao {
     @Query("DELETE FROM insights WHERE sessionId = :sessionId")
     suspend fun deleteInsights(sessionId: String)
 
+    @Query("SELECT * FROM diarizations WHERE sessionId = :sessionId")
+    suspend fun diarization(sessionId: String): DiarizationEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertDiarization(d: DiarizationEntity)
+
+    @Query("DELETE FROM diarizations WHERE sessionId = :sessionId")
+    suspend fun deleteDiarization(sessionId: String)
+
+    @Query("SELECT * FROM diarizations")
+    fun observeDiarizations(): Flow<List<DiarizationEntity>>
+
+    @Query("SELECT * FROM voices ORDER BY name")
+    suspend fun voices(): List<VoiceEntity>
+
+    @Query("SELECT * FROM voices ORDER BY name")
+    fun observeVoices(): Flow<List<VoiceEntity>>
+
+    @Query("SELECT * FROM voices WHERE name = :name")
+    suspend fun voice(name: String): VoiceEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertVoice(v: VoiceEntity)
+
+    @Query("DELETE FROM voices WHERE name = :name")
+    suspend fun deleteVoice(name: String)
+
     @Transaction
     suspend fun delete(sessionId: String) {
         deleteFragments(sessionId)
         deleteNotes(sessionId)
         deleteTranscript(sessionId)
         deleteInsights(sessionId)
+        deleteDiarization(sessionId)
         deleteSession(sessionId)
     }
 }
 
-@Database(entities = [SessionEntity::class, FragmentEntity::class, NoteEntity::class, TranscriptEntity::class, InsightsEntity::class], version = 4, exportSchema = false)
+@Database(entities = [SessionEntity::class, FragmentEntity::class, NoteEntity::class, TranscriptEntity::class, InsightsEntity::class, DiarizationEntity::class, VoiceEntity::class], version = 5, exportSchema = false)
 abstract class EscribaDb : RoomDatabase() {
     abstract fun sessions(): SessionDao
 
@@ -233,9 +282,23 @@ abstract class EscribaDb : RoomDatabase() {
             }
         }
 
+        /** Fase 7 → 8: diarización y voces registradas. */
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS diarizations (sessionId TEXT NOT NULL PRIMARY KEY, turnsJson TEXT NOT NULL, " +
+                        "embeddingsJson TEXT NOT NULL, speechMsJson TEXT NOT NULL, createdAtMs INTEGER NOT NULL)",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS voices (name TEXT NOT NULL PRIMARY KEY, embedding TEXT NOT NULL, " +
+                        "samples INTEGER NOT NULL, updatedAtMs INTEGER NOT NULL)",
+                )
+            }
+        }
+
         fun open(context: Context): EscribaDb =
             Room.databaseBuilder(context.applicationContext, EscribaDb::class.java, "escriba.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .build()
     }
 }

@@ -10,6 +10,8 @@ import dev.escriba.mobile.transcription.Benchmark
 import dev.escriba.mobile.transcription.ModelStore
 import dev.escriba.mobile.transcription.ModelSlot
 import dev.escriba.mobile.llm.Summarizer
+import dev.escriba.mobile.voices.Diarizer
+import dev.escriba.mobile.voices.VoiceStore
 import dev.escriba.mobile.transcription.Transcriber
 import dev.escriba.mobile.vault.NoteWriter
 import dev.escriba.mobile.processing.ProcessWorker
@@ -63,6 +65,9 @@ class EscribaApp : Application() {
     lateinit var summarizer: Summarizer
         private set
 
+    lateinit var voices: VoiceStore
+        private set
+
     /** Para tareas sueltas de la app que no dependen de ninguna pantalla. */
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -79,7 +84,8 @@ class EscribaApp : Application() {
         val slot = ModelSlot()
         transcriber = Transcriber(models, slot)
         summarizer = Summarizer(models, slot)
-        processor = SessionProcessor(db, vault, profiles, transcriber, summarizer, notes)
+        voices = VoiceStore(db)
+        processor = SessionProcessor(db, vault, profiles, transcriber, summarizer, Diarizer(models, slot), voices, notes)
         benchmark = Benchmark(scope, db, transcriber, summarizer, profiles, processor)
         inbox = Inbox(File(filesDir, "inbox"), link, db) { sessionId, speechMs -> ProcessWorker.enqueue(this, sessionId, speechMs = speechMs) }
         RetentionWorker.schedule(this)

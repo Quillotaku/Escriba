@@ -47,6 +47,8 @@ class NoteWriter(
         profileOverride: String? = null,
         transcript: List<TranscriptLine>? = null,
         insights: Map<Int, Insights>? = null,
+        /** Hablantes reconocidos por su voz (sin los «Hablante N»). */
+        speakers: List<String> = emptyList(),
     ): Outcome = mutex.withLock {
         val dao = db.sessions()
         try {
@@ -82,6 +84,10 @@ class NoteWriter(
                     status = if (transcript != null) "transcrita" else "pendiente",
                 )
                 if (found != null) base = withInsights(base, found, profile, linker)
+                // Quien habla en esta conversación, reconocido por la voz, es participante seguro.
+                val heard = lines.orEmpty().mapNotNull { it.speaker }.filter { it in speakers }.distinct()
+                    .map { if (it == "Yo" || "personas" !in profile.link) it else linker.linkOrPlain(it) }
+                if (heard.isNotEmpty()) base = base.copy(participants = (heard + base.participants).distinctBy { EntityLinker.key(it) })
                 val folder = NoteRenderer.folder(profile.folder, conversation.startMs, zone)
                 val baseName = NoteRenderer.baseName(base)
 

@@ -133,6 +133,7 @@ fun VaultScreen(app: EscribaApp) {
                                     p.folder,
                                     "audio".takeIf { p.saveAudio },
                                     "diarización".takeIf { p.diarization },
+                                    "Parakeet".takeIf { p.engine == "parakeet" },
                                     "tareas".takeIf { p.tasks },
                                     p.client,
                                 ).joinToString(" · "),
@@ -157,6 +158,8 @@ fun VaultScreen(app: EscribaApp) {
                 Text("También están en ${VaultBootstrap.ERRORS_FILE}.", style = MaterialTheme.typography.bodySmall)
             }
 
+            EnrolledVoicesCard(app)
+
             OutlinedButton(onClick = { RetentionWorker.runNow(app) }) { Text("Aplicar la retención de audio ahora") }
         }
     }
@@ -175,6 +178,7 @@ private fun ProfileEditor(app: EscribaApp, profile: Profile, close: () -> Unit) 
     var favorite by remember { mutableStateOf(profile.favorite) }
     var saveAudio by remember { mutableStateOf(profile.saveAudio) }
     var diarization by remember { mutableStateOf(profile.diarization) }
+    var engine by remember { mutableStateOf(profile.engine) }
     var tasks by remember { mutableStateOf(profile.tasks) }
     var discard by remember { mutableStateOf(profile.discardTrivial) }
     var icon by remember { mutableStateOf(profile.icon) }
@@ -198,6 +202,12 @@ private fun ProfileEditor(app: EscribaApp, profile: Profile, close: () -> Unit) 
                 Toggle("Favorito (sale primero en el reloj)", favorite) { favorite = it }
                 Toggle("Guardar el audio en la bóveda", saveAudio) { saveAudio = it }
                 Toggle("Diarización (quién habla)", diarization) { diarization = it }
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Motor:")
+                    listOf("whisper" to "Whisper", "parakeet" to "Parakeet").forEach { (id, label) ->
+                        FilterChip(selected = engine == id, onClick = { engine = id }, label = { Text(label) })
+                    }
+                }
                 Toggle("Extraer tareas", tasks) { tasks = it }
                 Toggle("Descartar conversaciones triviales", discard) { discard = it }
                 OutlinedTextField(prompt, { prompt = it }, label = { Text("Prompt") }, modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp))
@@ -224,6 +234,7 @@ private fun ProfileEditor(app: EscribaApp, profile: Profile, close: () -> Unit) 
                     set("favorito", YamlValue.Bool(favorite), profile.favorite)
                     set("guardar_audio", YamlValue.Bool(saveAudio), profile.saveAudio)
                     set("diarizacion", YamlValue.Bool(diarization), profile.diarization)
+                    set("motor", YamlValue.Text(engine), profile.engine)
                     set("tareas", YamlValue.Bool(tasks), profile.tasks)
                     set("descartar_triviales", YamlValue.Bool(discard), profile.discardTrivial)
                     app.profiles.saveProfile(profile.id, changes, prompt, opened?.second)

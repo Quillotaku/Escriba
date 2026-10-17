@@ -55,6 +55,7 @@ import dev.escriba.datalayer.AppLog
 import dev.escriba.datalayer.Peer
 import dev.escriba.datalayer.PairingState
 import dev.escriba.mobile.data.SessionEntity
+import dev.escriba.mobile.ui.SessionVoicesDialog
 import dev.escriba.mobile.ui.ModelsScreen
 import dev.escriba.mobile.ui.VaultScreen
 import dev.escriba.mobile.processing.ProcessWorker
@@ -150,6 +151,9 @@ private fun SessionsScreen(app: EscribaApp) {
     val scope = rememberCoroutineScope()
     var toDelete by remember { mutableStateOf<SessionEntity?>(null) }
     var pickProfileFor by remember { mutableStateOf<String?>(null) }
+    var voicesFor by remember { mutableStateOf<String?>(null) }
+    val diarized by app.db.sessions().observeDiarizations().collectAsStateWithLifecycle(initialValue = emptyList())
+    val diarizedIds = diarized.map { it.sessionId }.toSet()
     val allNotes by app.db.sessions().observeNotes().collectAsStateWithLifecycle(initialValue = emptyList())
     val notesBySession = allNotes.groupBy { it.sessionId }
     val profileSet by app.profiles.set.collectAsStateWithLifecycle()
@@ -199,12 +203,15 @@ private fun SessionsScreen(app: EscribaApp) {
                                 }
                             }
                         }
+                        if (s.isComplete && (s.audioDeletedAtMs == null || s.id in diarizedIds)) TextButton(onClick = { voicesFor = s.id }) { Text("Voces") }
                         TextButton(onClick = { toDelete = s }) { Text("Borrar") }
                     }
                 }
             }
         }
     }
+
+    voicesFor?.let { id -> SessionVoicesDialog(app, id) { voicesFor = null } }
 
     toDelete?.let { s ->
         AlertDialog(

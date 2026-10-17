@@ -36,6 +36,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.escriba.datalayer.AppLog
 import dev.escriba.mobile.EscribaApp
 import dev.escriba.mobile.transcription.Benchmark
+import dev.escriba.mobile.transcription.ParakeetAsr
 import dev.escriba.nativeml.WhisperEngine
 import java.time.Instant
 import java.time.ZoneId
@@ -113,6 +114,9 @@ fun ModelsScreen(app: EscribaApp) {
             OutlinedButton(onClick = { pickModel = true }) { Text(modelName ?: "Elegir modelo") }
             DropdownMenu(expanded = pickModel, onDismissRequest = { pickModel = false }) {
                 models.filter { it.kind == "whisper" }.forEach { m -> DropdownMenuItem(text = { Text(m.name) }, onClick = { modelName = m.name; pickModel = false }) }
+                if (models.count { it.kind == "parakeet" } >= 4) {
+                    DropdownMenuItem(text = { Text(ParakeetAsr.MODEL_NAME + " (Parakeet)") }, onClick = { modelName = ParakeetAsr.MODEL_NAME; pickModel = false })
+                }
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {

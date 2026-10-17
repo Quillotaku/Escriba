@@ -63,7 +63,7 @@ sealed interface Route : NavKey {
     data class ProfileEdit(val id: String) : Route
 }
 
-private enum class Tab(val root: Route, val label: String, val icon: ImageVector) {
+internal enum class Tab(val root: Route, val label: String, val icon: ImageVector) {
     TODAY(Route.Today, "Hoy", Icons.Rounded.Home),
     SESSIONS(Route.Sessions, "Sesiones", Icons.AutoMirrored.Rounded.List),
     SETTINGS(Route.Settings, "Ajustes", Icons.Rounded.Settings),
@@ -73,7 +73,7 @@ private enum class Tab(val root: Route, val label: String, val icon: ImageVector
  * Pila por pestaña. Atrás retrocede dentro de la pestaña; en la raíz de «Sesiones» o «Ajustes»
  * vuelve a «Hoy», y desde la raíz de «Hoy» sale de la app.
  */
-private class Navigator {
+internal class Navigator {
     private val stacks = mutableStateMapOf<Tab, SnapshotStateList<Route>>()
     var tab by mutableStateOf(Tab.TODAY)
         private set

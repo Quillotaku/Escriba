@@ -113,7 +113,7 @@ class ProfileRepository(
         runCatching {
             val clean = name.trim()
             require(clean.isNotEmpty()) { "Ponle un nombre al perfil" }
-            val base = slug(clean).ifEmpty { "perfil" }
+            val base = profileSlug(clean).ifEmpty { "perfil" }
             var id = base
             var n = 2
             while (vault.exists("${VaultBootstrap.PROFILES_DIR}/$id.md")) id = "$base-${n++}"
@@ -135,14 +135,6 @@ class ProfileRepository(
             id
         }
     }
-
-    /** «Reuniones Acme» → «reuniones-acme»: el id es el nombre del archivo. */
-    private fun slug(text: String): String =
-        java.text.Normalizer.normalize(text, java.text.Normalizer.Form.NFD)
-            .replace(Regex("\\p{M}+"), "")
-            .lowercase()
-            .replace(Regex("[^a-z0-9]+"), "-")
-            .trim('-')
 
     private fun replacePrompt(body: String, prompt: String): String {
         val lines = body.lines()
@@ -178,3 +170,11 @@ class ProfileRepository(
         const val KEY_SENT = "enviado"
     }
 }
+
+/** «Reuniones Acme» → «reuniones-acme»: el id de un perfil es el nombre de su archivo. */
+internal fun profileSlug(text: String): String =
+    java.text.Normalizer.normalize(text, java.text.Normalizer.Form.NFD)
+        .replace(Regex("\\p{M}+"), "")
+        .lowercase()
+        .replace(Regex("[^a-z0-9]+"), "-")
+        .trim('-')

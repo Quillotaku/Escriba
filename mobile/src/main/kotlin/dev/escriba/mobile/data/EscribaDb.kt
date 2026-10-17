@@ -257,13 +257,13 @@ interface SessionDao {
     }
 }
 
-@Database(entities = [SessionEntity::class, FragmentEntity::class, NoteEntity::class, TranscriptEntity::class, InsightsEntity::class, DiarizationEntity::class, VoiceEntity::class], version = 5, exportSchema = false)
+@Database(entities = [SessionEntity::class, FragmentEntity::class, NoteEntity::class, TranscriptEntity::class, InsightsEntity::class, DiarizationEntity::class, VoiceEntity::class], version = 5, exportSchema = true)
 abstract class EscribaDb : RoomDatabase() {
     abstract fun sessions(): SessionDao
 
     companion object {
         /** Fase 3 → 4: estado de procesado de las sesiones y tabla de notas. */
-        private val MIGRATION_1_2 = object : Migration(1, 2) {
+        internal val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE sessions ADD COLUMN processedAtMs INTEGER")
                 db.execSQL("ALTER TABLE sessions ADD COLUMN processedProfileId TEXT")
@@ -278,7 +278,7 @@ abstract class EscribaDb : RoomDatabase() {
         }
 
         /** Fase 4 → 6: transcripciones. */
-        private val MIGRATION_2_3 = object : Migration(2, 3) {
+        internal val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "CREATE TABLE IF NOT EXISTS transcripts (sessionId TEXT NOT NULL PRIMARY KEY, model TEXT NOT NULL, " +
@@ -289,7 +289,7 @@ abstract class EscribaDb : RoomDatabase() {
         }
 
         /** Fase 6 → 7: resultados del LLM. */
-        private val MIGRATION_3_4 = object : Migration(3, 4) {
+        internal val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "CREATE TABLE IF NOT EXISTS insights (sessionId TEXT NOT NULL, conversation INTEGER NOT NULL, model TEXT NOT NULL, " +
@@ -299,7 +299,7 @@ abstract class EscribaDb : RoomDatabase() {
         }
 
         /** Fase 7 → 8: diarización y voces registradas. */
-        private val MIGRATION_4_5 = object : Migration(4, 5) {
+        internal val MIGRATION_4_5 = object : Migration(4, 5) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "CREATE TABLE IF NOT EXISTS diarizations (sessionId TEXT NOT NULL PRIMARY KEY, turnsJson TEXT NOT NULL, " +
@@ -312,9 +312,12 @@ abstract class EscribaDb : RoomDatabase() {
             }
         }
 
+        /** Todas las migraciones, en orden. Los tests comprueban que llevan de la v1 a la actual. */
+        internal val MIGRATIONS get() = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+
         fun open(context: Context): EscribaDb =
             Room.databaseBuilder(context.applicationContext, EscribaDb::class.java, "escriba.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(*MIGRATIONS)
                 .build()
     }
 }

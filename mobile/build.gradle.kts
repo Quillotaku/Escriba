@@ -22,8 +22,8 @@ android {
         applicationId = "dev.escriba"
         minSdk = 35
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 100
+        versionName = "1.0.0"
         // Solo el Honor (arm64): sin esto se empaquetarían las bibliotecas de sherpa-onnx de cuatro arquitecturas.
         ndk { abiFilters += "arm64-v8a" }
     }
@@ -34,7 +34,12 @@ android {
             enableUnitTestCoverage = true
         }
         release {
-            isMinifyEnabled = false
+            // R8: la interfaz en Compose va mucho más fluida optimizada.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // Misma firma que el reloj (la de depuración): la Data Layer solo une apps con la misma.
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 
@@ -80,6 +85,8 @@ dependencies {
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
+    // Los servicios de Google traen un fragment antiguo que rompe los permisos con ActivityResult.
+    implementation(libs.androidx.fragment)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.work.runtime.ktx)
     implementation(libs.room.runtime)

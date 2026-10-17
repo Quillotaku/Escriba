@@ -64,7 +64,7 @@ class ProcessWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         val manager = applicationContext.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(CHANNEL, "Procesado de grabaciones", NotificationManager.IMPORTANCE_LOW))
         val notification = NotificationCompat.Builder(applicationContext, CHANNEL)
-            .setSmallIcon(R.drawable.ic_launcher)
+            .setSmallIcon(R.drawable.ic_launcher_monochrome)
             .setContentTitle("Escriba")
             .setContentText(text)
             .setOngoing(true)

@@ -215,6 +215,22 @@ interface SessionDao {
     @Query("SELECT * FROM diarizations")
     fun observeDiarizations(): Flow<List<DiarizationEntity>>
 
+    @Query("SELECT * FROM insights")
+    fun observeInsights(): Flow<List<InsightsEntity>>
+
+    /** Fragmentos desde una fecha: el panel calcula con ellos las conversaciones de la semana. */
+    @Query("SELECT * FROM fragments WHERE startMs >= :fromMs")
+    fun observeFragmentsSince(fromMs: Long): Flow<List<FragmentEntity>>
+
+    @Query("SELECT * FROM sessions WHERE id = :id")
+    fun observeSession(id: String): Flow<SessionEntity?>
+
+    @Query("SELECT * FROM fragments WHERE sessionId = :sessionId ORDER BY seq")
+    fun observeFragments(sessionId: String): Flow<List<FragmentEntity>>
+
+    @Query("SELECT * FROM notes WHERE sessionId = :sessionId ORDER BY conversation")
+    fun observeNotes(sessionId: String): Flow<List<NoteEntity>>
+
     @Query("SELECT * FROM voices ORDER BY name")
     suspend fun voices(): List<VoiceEntity>
 

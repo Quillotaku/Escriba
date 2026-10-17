@@ -10,6 +10,7 @@ import dev.escriba.mobile.transcription.Benchmark
 import dev.escriba.mobile.transcription.ModelStore
 import dev.escriba.mobile.transcription.ModelSlot
 import dev.escriba.mobile.llm.Summarizer
+import dev.escriba.mobile.ui.theme.Appearance
 import dev.escriba.mobile.voices.Diarizer
 import dev.escriba.mobile.voices.VoiceStore
 import dev.escriba.mobile.transcription.Transcriber
@@ -68,6 +69,9 @@ class EscribaApp : Application() {
     lateinit var voices: VoiceStore
         private set
 
+    lateinit var appearance: Appearance
+        private set
+
     /** Para tareas sueltas de la app que no dependen de ninguna pantalla. */
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -85,6 +89,7 @@ class EscribaApp : Application() {
         transcriber = Transcriber(models, slot)
         summarizer = Summarizer(models, slot)
         voices = VoiceStore(db)
+        appearance = Appearance(this)
         processor = SessionProcessor(db, vault, profiles, transcriber, summarizer, Diarizer(models, slot), voices, notes)
         benchmark = Benchmark(scope, db, transcriber, summarizer, profiles, processor)
         inbox = Inbox(File(filesDir, "inbox"), link, db) { sessionId, speechMs -> ProcessWorker.enqueue(this, sessionId, speechMs = speechMs) }

@@ -73,8 +73,6 @@ fun VaultScreen(app: EscribaApp) {
     }
 
     Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Bóveda de Obsidian", style = MaterialTheme.typography.titleLarge)
-
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (tree == null) {
@@ -157,8 +155,6 @@ fun VaultScreen(app: EscribaApp) {
                 }
                 Text("También están en ${VaultBootstrap.ERRORS_FILE}.", style = MaterialTheme.typography.bodySmall)
             }
-
-            EnrolledVoicesCard(app)
 
             OutlinedButton(onClick = { RetentionWorker.runNow(app) }) { Text("Aplicar la retención de audio ahora") }
         }

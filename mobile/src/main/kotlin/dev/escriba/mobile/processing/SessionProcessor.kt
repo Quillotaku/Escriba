@@ -173,6 +173,18 @@ class SessionProcessor(
         }
     }
 
+    /**
+     * Frases de la sesión con su hablante, si está diarizada, y los nombres de las voces
+     * registradas. Es lo que muestra el detalle de la sesión; no calcula nada nuevo.
+     */
+    suspend fun labeledLines(sessionId: String): Pair<List<TranscriptLine>, Set<String>> {
+        val dao = db.sessions()
+        val lines = dao.transcript(sessionId)?.let { EscribaJson.decodeFromString<List<TranscriptLine>>(it.linesJson) } ?: return emptyList<TranscriptLine>() to emptySet()
+        val known = voices.names().toSet()
+        val d = dao.diarization(sessionId) ?: return lines to known
+        return label(d, lines, voices.all()).first to known
+    }
+
     /** Frases con su hablante y la lista de hablantes reconocidos por su voz. */
     private suspend fun labelSpeakers(
         sessionId: String,
@@ -180,11 +192,14 @@ class SessionProcessor(
         onStep: suspend (Step) -> Unit,
     ): Pair<List<TranscriptLine>, List<String>> {
         val d = ensureDiarization(sessionId, onStep)
+        return label(d, lines, voices.all())
+    }
+
+    private fun label(d: DiarizationEntity, lines: List<TranscriptLine>, enrolled: List<dev.escriba.shared.voices.EnrolledVoice>): Pair<List<TranscriptLine>, List<String>> {
         val clean = cleaned(d)
         val turns = clean.turns
         val speech = clean.speechMs
         // Con un solo hablante no hace falta etiquetar nada… salvo que sea una voz conocida.
-        val enrolled = voices.all()
         val labels = VoiceMath.identify(clean.embeddings, enrolled).toMutableMap()
         speech.keys.forEach { c -> labels.getOrPut(c) { "Hablante ${labels.size + 1}" } }
         val known = enrolled.map { it.name }.toSet()

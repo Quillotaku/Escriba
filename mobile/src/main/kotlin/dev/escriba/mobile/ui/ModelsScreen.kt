@@ -72,7 +72,6 @@ fun ModelsScreen(app: EscribaApp) {
     }
 
     Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Modelos", style = MaterialTheme.typography.titleLarge)
         Text(
             "Los modelos no van dentro de la app: déjalos en una carpeta (p. ej. Descargas) y elígela aquí. " +
                 "Escriba los lee directamente desde ahí, sin copiarlos.",

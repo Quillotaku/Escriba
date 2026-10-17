@@ -42,6 +42,12 @@ class VaultAccess(context: Context) {
 
     fun exists(path: String): Boolean = find(path) != null
 
+    /** URI de un archivo de la bóveda, p. ej. para reproducir su audio. */
+    fun uri(path: String): Uri? = runCatching { find(path) }.getOrNull()
+
+    /** Nombre de la bóveda tal como lo ve Obsidian: la última carpeta. */
+    fun vaultName(): String? = displayPath()?.trimEnd('/')?.substringAfterLast('/')?.ifEmpty { null }
+
     fun list(dir: String): List<Entry> {
         val tree = _tree.value ?: return emptyList()
         val parentId = (if (dir.isEmpty()) rootId(tree) else findId(dir)) ?: return emptyList()

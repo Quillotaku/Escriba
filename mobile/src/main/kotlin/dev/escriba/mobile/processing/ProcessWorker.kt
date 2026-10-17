@@ -33,17 +33,17 @@ class ProcessWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         val sessionId = inputData.getString(KEY_SESSION) ?: return Result.failure()
         val profile = inputData.getString(KEY_PROFILE)
 
-        promote("Preparando la sesión…")
+        promote(sessionId, "Preparando la sesión…")
         return runCatching {
             app.processor.process(sessionId, profile) { step ->
                 when (step) {
-                    is SessionProcessor.Step.Transcribing -> promote("Transcribiendo ${step.speechSeconds / 60} min ${step.speechSeconds % 60} s de voz…")
-                    is SessionProcessor.Step.Diarizing -> promote("Separando hablantes en ${step.speechSeconds / 60} min de voz…")
-                    is SessionProcessor.Step.Summarizing -> promote("Resumiendo con ${step.model}…")
-                    SessionProcessor.Step.Writing -> promote("Escribiendo la nota…")
+                    is SessionProcessor.Step.Transcribing -> promote(sessionId, "Transcribiendo ${step.speechSeconds / 60} min ${step.speechSeconds % 60} s de voz…")
+                    is SessionProcessor.Step.Diarizing -> promote(sessionId, "Separando hablantes en ${step.speechSeconds / 60} min de voz…")
+                    is SessionProcessor.Step.Summarizing -> promote(sessionId, "Resumiendo con ${step.model}…")
+                    SessionProcessor.Step.Writing -> promote(sessionId, "Escribiendo la nota…")
                 }
             }
-        }.fold(
+        }.also { ProcessingStatus.clear(sessionId) }.fold(
             onSuccess = { Result.success() },
             onFailure = {
                 AppLog.e("procesado", "No se pudo procesar la sesión ${sessionId.take(8)}", it)
@@ -52,7 +52,8 @@ class ProcessWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         )
     }
 
-    private suspend fun promote(text: String) {
+    private suspend fun promote(sessionId: String, text: String) {
+        ProcessingStatus.set(sessionId, text)
         runCatching { setForeground(foregroundInfo(text)) }
             // Puede fallar si Android no deja arrancar un servicio desde segundo plano (Escriba debe
             // estar fuera de la optimización de batería). El trabajo sigue, pero con el límite de 10 min.

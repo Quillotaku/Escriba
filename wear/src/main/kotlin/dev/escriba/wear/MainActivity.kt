@@ -16,6 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.wear.compose.foundation.LocalAmbientModeManager
 import androidx.wear.compose.foundation.rememberAmbientModeManager
@@ -36,15 +37,15 @@ import dev.escriba.wear.ui.WatchActions
 import dev.escriba.wear.ui.WatchList
 import dev.escriba.wear.ui.WearApp
 
-/** La app del reloj: grabar, elegir perfil, el móvil, ajustes y diagnóstico. */
+/** The watch app: record, choose a profile, the phone, settings and diagnostics. */
 class MainActivity : ComponentActivity() {
 
     private val permissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
-        AppLog.i("ui", "Permisos: " + result.entries.joinToString { "${it.key.substringAfterLast('.')}=${it.value}" })
+        AppLog.i("ui", "Permissions: " + result.entries.joinToString { "${it.key.substringAfterLast('.')}=${it.value}" })
         micBlocked.value = micPermanentlyDenied()
     }
 
-    /** Sin micrófono no hay Escriba: si se denegó para siempre, la única salida son los Ajustes. */
+    /** No microphone, no Escriba: if it was denied for good, the only way out is Settings. */
     private val micBlocked = mutableStateOf(false)
 
     private fun micGranted() = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
@@ -57,7 +58,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Puede volver de Ajustes con el permiso concedido.
+        // It may come back from Settings with the permission granted.
         if (micGranted()) micBlocked.value = false
     }
 
@@ -71,16 +72,16 @@ class MainActivity : ComponentActivity() {
         super.onStop()
     }
 
-    @SuppressLint("BatteryLife") // app personal instalada por ADB: necesita sobrevivir en segundo plano
+    @SuppressLint("BatteryLife") // sideloaded personal app: it needs to survive in the background
     private fun requestBatteryExemption() {
         val power = getSystemService(PowerManager::class.java)
         if (power.isIgnoringBatteryOptimizations(packageName)) {
-            AppLog.i("ui", "Escriba ya está fuera de la optimización de batería")
+            AppLog.i("ui", "Escriba is already exempt from battery optimization")
             return
         }
         runCatching {
             startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
-        }.onFailure { AppLog.e("ui", "El reloj no permite abrir ese ajuste", it) }
+        }.onFailure { AppLog.e("ui", "The watch doesn't allow opening that setting", it) }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -95,7 +96,7 @@ class MainActivity : ComponentActivity() {
             toggleRecording = { RecorderService.send(this, RecorderService.intent(this, RecorderService.ACTION_TOGGLE, "app")) },
             switchProfile = { id ->
                 runCatching { RecorderService.send(this, RecorderService.switchIntent(this, id, "app")) }
-                    .onFailure { AppLog.e("ui", "No se pudo cambiar de perfil", it) }
+                    .onFailure { AppLog.e("ui", "Couldn't switch profile", it) }
             },
             sendNow = { UploadWorker.kick(this, manual = true) },
             requestBatteryExemption = ::requestBatteryExemption,
@@ -103,7 +104,7 @@ class MainActivity : ComponentActivity() {
         )
         setContent {
             EscribaWearTheme {
-                // El modo ambiente lo gestiona Compose: la pantalla principal se simplifica sola.
+                // Compose handles ambient mode: the main screen simplifies itself.
                 CompositionLocalProvider(LocalAmbientModeManager provides rememberAmbientModeManager()) {
                     if (micBlocked.value) MicPermissionScreen(onOpenSettings = ::openAppSettings)
                     else WearApp(app, settings, actions)
@@ -118,11 +119,11 @@ private fun MicPermissionScreen(onOpenSettings: () -> Unit) {
     AppScaffold {
         WatchList { spec ->
             item {
-                ListHeader(Modifier.fillMaxWidth().transformedHeight(this, spec), transformation = SurfaceTransformation(spec)) { Text("Sin micrófono") }
+                ListHeader(Modifier.fillMaxWidth().transformedHeight(this, spec), transformation = SurfaceTransformation(spec)) { Text(stringResource(R.string.no_microphone)) }
             }
             item {
                 Text(
-                    "Escriba necesita el micrófono para grabar y se denegó el permiso. Actívalo en Ajustes → Permisos.",
+                    stringResource(R.string.no_microphone_hint),
                     style = MaterialTheme.typography.bodySmall,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
@@ -130,7 +131,7 @@ private fun MicPermissionScreen(onOpenSettings: () -> Unit) {
             }
             item {
                 Button(onClick = onOpenSettings, modifier = Modifier.fillMaxWidth().transformedHeight(this, spec), transformation = SurfaceTransformation(spec)) {
-                    Text("Abrir ajustes")
+                    Text(stringResource(R.string.open_settings))
                 }
             }
         }

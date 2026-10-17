@@ -6,13 +6,13 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Pilas por pestaña y el botón Atrás. */
+/** Per-tab stacks and the Back button. */
 class NavigatorTest {
 
     private val nav = Navigator()
 
     @Test
-    fun `atras dentro de una pestana y luego a Hoy y luego fuera`() {
+    fun `back within a tab then to Today then out`() {
         nav.select(Tab.SESSIONS)
         nav.push(Route.Session("s1", 1))
         assertEquals(Route.Session("s1", 1), nav.stack().last())
@@ -20,14 +20,14 @@ class NavigatorTest {
         assertTrue(nav.back())
         assertEquals(listOf<Route>(Route.Sessions), nav.stack().toList())
 
-        assertTrue(nav.back()) // en la raíz de Sesiones, Atrás vuelve a Hoy
+        assertTrue(nav.back()) // at the root of Sessions, Back returns to Today
         assertEquals(Tab.TODAY, nav.tab)
 
-        assertFalse(nav.back()) // en la raíz de Hoy, Atrás sale de la app
+        assertFalse(nav.back()) // at the root of Today, Back leaves the app
     }
 
     @Test
-    fun `cada pestana conserva su pila al cambiar`() {
+    fun `each tab keeps its stack when switching`() {
         nav.select(Tab.SETTINGS)
         nav.push(Route.Setting(SettingsPage.MODELS))
         nav.push(Route.Setting(SettingsPage.BENCHMARK))
@@ -38,10 +38,10 @@ class NavigatorTest {
     }
 
     @Test
-    fun `pulsar la pestana en la que estas vuelve a su raiz`() {
+    fun `tapping the current tab goes back to its root`() {
         nav.select(Tab.SETTINGS)
         nav.push(Route.Setting(SettingsPage.VAULT))
-        nav.push(Route.ProfileEdit("trabajo"))
+        nav.push(Route.ProfileEdit("work"))
         nav.select(Tab.SETTINGS)
         assertEquals(listOf<Route>(Route.Settings), nav.stack().toList())
     }

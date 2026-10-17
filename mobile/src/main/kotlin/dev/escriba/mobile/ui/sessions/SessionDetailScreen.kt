@@ -41,6 +41,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import dev.escriba.mobile.R
+import dev.escriba.shared.voices.VoiceMath
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.escriba.datalayer.AppLog
@@ -75,7 +79,7 @@ import java.time.format.DateTimeFormatter
 
 private val HMS = DateTimeFormatter.ofPattern("HH:mm:ss")
 
-/** Agrupa frases en párrafos como la nota: cambio de hablante, 4 s de silencio o 400 caracteres. */
+/** Groups lines into paragraphs like the note: speaker change, 4 s of silence or 400 characters. */
 fun paragraphs(lines: List<TranscriptLine>, known: Set<String>, pauseMs: Long = 4_000, maxChars: Int = 400): List<TranscriptParagraph> {
     val out = ArrayList<TranscriptParagraph>()
     var startLine: TranscriptLine? = null
@@ -83,7 +87,7 @@ fun paragraphs(lines: List<TranscriptLine>, known: Set<String>, pauseMs: Long = 
     var lastEnd = Long.MIN_VALUE
     fun flush() {
         val first = startLine ?: return
-        out += TranscriptParagraph(first.wallStartMs.local().format(HMS), first.speaker, first.speaker in known || first.speaker == "Yo", text.toString())
+        out += TranscriptParagraph(first.wallStartMs.local().format(HMS), first.speaker, first.speaker in known || first.speaker == VoiceMath.ME, text.toString())
         text.clear()
     }
     for (l in lines) {
@@ -112,7 +116,7 @@ fun SessionDetailScreen(app: EscribaApp, sessionId: String, focus: Int, padding:
     val processing by ProcessingStatus.current.collectAsStateWithLifecycle()
     val watch by app.inbox.watchStatus.collectAsStateWithLifecycle()
     val insights = remember(allInsights, sessionId) { allInsights.filter { it.sessionId == sessionId } }
-    // Las frases con hablante cambian al reprocesar: se recargan cuando cambian notas o insights.
+    // Lines with speakers change when reprocessing: they're reloaded when notes or insights change.
     val labeled by produceState(emptyList<TranscriptLine>() to emptySet<String>(), sessionId, notes, insights) {
         value = runCatching { app.processor.labeledLines(sessionId) }.getOrDefault(emptyList<TranscriptLine>() to emptySet())
     }
@@ -141,44 +145,44 @@ fun SessionDetailScreen(app: EscribaApp, sessionId: String, focus: Int, padding:
     ) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
-                // Con varias conversaciones, la cabecera resume la sesión; con una, ya lo dice la conversación.
+                // With several conversations, the header summarizes the session; with one, the conversation already says it.
                 if (conversations.size != 1) {
                     val end = s.endMs ?: s.lastSpeechEndMs
-                    MetaRow(formatSpeech(s.speechMs) + " de voz", "${conversations.size} conversaciones", time = "${s.startMs.local().format(HM)}–${end.local().format(HM)}")
+                    MetaRow(stringResource(R.string.speech_of, formatSpeech(s.speechMs)), pluralStringResource(R.plurals.conversations, conversations.size, conversations.size), time = "${s.startMs.local().format(HM)}–${end.local().format(HM)}")
                 }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.s2), verticalArrangement = Arrangement.spacedBy(Space.s2)) {
                     ProfileChip(profile?.name ?: s.profileId, c.profileColor(profile?.color))
                     when {
-                        processing?.sessionId == s.id -> StatusChip(processing?.step ?: "Procesando", Tone.BUSY)
-                        s.endMs == null -> StatusChip("En curso", Tone.RECORDING)
-                        !s.isComplete -> StatusChip("Faltan fragmentos", Tone.WAIT)
+                        processing?.sessionId == s.id -> StatusChip(processing?.step ?: stringResource(R.string.state_processing), Tone.BUSY)
+                        s.endMs == null -> StatusChip(stringResource(R.string.session_ongoing), Tone.RECORDING)
+                        !s.isComplete -> StatusChip(stringResource(R.string.session_missing_fragments), Tone.WAIT)
                     }
-                    if (s.audioDeletedAtMs != null) StatusChip("Audio borrado (retención)", Tone.WAIT)
+                    if (s.audioDeletedAtMs != null) StatusChip(stringResource(R.string.session_audio_deleted), Tone.WAIT)
                 }
                 s.processError?.let { err ->
                     EsCard {
-                        StatusChip("Error", Tone.ERROR)
+                        StatusChip(stringResource(R.string.state_failed), Tone.ERROR)
                         Text(err, style = MaterialTheme.typography.bodyMedium, color = c.ink)
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(Space.s2), verticalAlignment = Alignment.CenterVertically) {
                     if (s.isComplete) {
-                        Button(onClick = { ProcessWorker.enqueue(app, s.id, now = true) }) { Text(if (notes.isEmpty()) "Procesar ahora" else "Reprocesar") }
-                        OutlinedButton(onClick = { voices = true }) { Text("Voces") }
+                        Button(onClick = { ProcessWorker.enqueue(app, s.id, now = true) }) { Text(stringResource(if (notes.isEmpty()) R.string.process_now else R.string.reprocess)) }
+                        OutlinedButton(onClick = { voices = true }) { Text(stringResource(R.string.voices)) }
                     }
                     Spacer(Modifier.weight(1f))
                     Box {
-                        IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, "Más acciones", tint = c.ink) }
+                        IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, stringResource(R.string.more_actions), tint = c.ink) }
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                             if (s.isComplete) {
                                 set?.profiles?.values?.forEach { p ->
-                                    DropdownMenuItem(text = { Text("Reprocesar como ${p.name}") }, onClick = {
+                                    DropdownMenuItem(text = { Text(stringResource(R.string.reprocess_as, p.name)) }, onClick = {
                                         ProcessWorker.enqueue(app, s.id, p.id, now = true)
                                         menu = false
                                     })
                                 }
                             }
-                            DropdownMenuItem(text = { Text("Borrar la sesión", color = c.danger) }, onClick = {
+                            DropdownMenuItem(text = { Text(stringResource(R.string.delete_session), color = c.danger) }, onClick = {
                                 menu = false
                                 confirmDelete = true
                             })
@@ -194,30 +198,30 @@ fun SessionDetailScreen(app: EscribaApp, sessionId: String, focus: Int, padding:
                 val result = insights.firstOrNull { it.conversation == conv.index }?.let { runCatching { Insights.parse(it.json) }.getOrNull() }
                 val own = labeled.first.filter { it.wallStartMs >= conv.startMs - 1_000 && it.wallStartMs <= conv.endMs + 1_000 }
                 Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
-                    if (conversations.size > 1) Overline("Conversación ${conv.index}", Modifier.padding(top = Space.s3))
-                    Text(conv.title ?: "Conversación de las ${conv.startMs.local().format(HM)}", style = MaterialTheme.typography.headlineSmall, color = c.ink)
+                    if (conversations.size > 1) Overline(stringResource(R.string.conversation_n, conv.index), Modifier.padding(top = Space.s3))
+                    Text(conv.title ?: stringResource(R.string.conversation_at, conv.startMs.local().format(HM)), style = MaterialTheme.typography.headlineSmall, color = c.ink)
                     Row(horizontalArrangement = Arrangement.spacedBy(Space.s3)) {
-                        MetaRow(formatMinutes(conv.roundedMin), formatSpeech(conv.speechMs) + " de voz", time = "${conv.startMs.local().format(HM)}–${conv.endMs.local().format(HM)}")
+                        MetaRow(formatMinutes(conv.roundedMin), stringResource(R.string.speech_of, formatSpeech(conv.speechMs)), time = "${conv.startMs.local().format(HM)}–${conv.endMs.local().format(HM)}")
                     }
                     conv.state.chip()
                     if (result != null) {
                         EsCard {
-                            Overline("Resumen")
+                            Overline(stringResource(R.string.summary))
                             Text(result.summary, style = MaterialTheme.typography.bodyLarge, color = c.ink)
                             if (result.decisions.isNotEmpty()) {
-                                Overline("Decisiones", Modifier.padding(top = Space.s2))
+                                Overline(stringResource(R.string.decisions), Modifier.padding(top = Space.s2))
                                 result.decisions.forEach { Text("· $it", style = MaterialTheme.typography.bodyLarge, color = c.ink) }
                             }
                             if (result.tasks.isNotEmpty()) {
-                                Overline("Tareas", Modifier.padding(top = Space.s2))
+                                Overline(stringResource(R.string.dash_tasks), Modifier.padding(top = Space.s2))
                                 result.tasks.forEach { t ->
                                     Text("· ${t.text}" + listOfNotNull(t.owner, t.due).joinToString(" · ").let { if (it.isEmpty()) "" else " ($it)" }, style = MaterialTheme.typography.bodyLarge, color = c.ink)
                                 }
                             }
                         }
                     }
-                    // El audio de la bóveda si el perfil lo guarda; si no, el del móvil mientras no
-                    // lo borre la retención (7 días tras escribir la nota, por defecto).
+                    // The vault's audio if the profile saves it; otherwise the phone's, until retention
+                    // deletes it (7 days after writing the note, by default).
                     val vaultAudio = note?.audioPath?.takeIf { note.audioDeletedAtMs == null }
                     val phoneAudio = if (s.audioDeletedAtMs == null) {
                         fragments.filter { it.endMs > conv.startMs && it.startMs < conv.endMs }.sortedBy { it.seq }.map { java.io.File(it.path) }.filter { it.exists() }
@@ -233,7 +237,7 @@ fun SessionDetailScreen(app: EscribaApp, sessionId: String, focus: Int, padding:
                     }
                     if (own.isNotEmpty()) TranscriptBlock(paragraphs(own, labeled.second))
                     else if (conv.state != dev.escriba.mobile.ui.today.ConversationState.RECORDING) {
-                        Text("Sin transcripción todavía.", style = MaterialTheme.typography.bodyMedium, color = c.inkMuted)
+                        Text(stringResource(R.string.no_transcript_yet), style = MaterialTheme.typography.bodyMedium, color = c.inkMuted)
                     }
                 }
             }
@@ -244,8 +248,8 @@ fun SessionDetailScreen(app: EscribaApp, sessionId: String, focus: Int, padding:
     if (confirmDelete) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
-            title = { Text("¿Borrar la sesión?") },
-            text = { Text("Se borra su audio del móvil. Las notas ya escritas en la bóveda no se tocan. No se puede deshacer.") },
+            title = { Text(stringResource(R.string.delete_session_title)) },
+            text = { Text(stringResource(R.string.delete_session_body)) },
             confirmButton = {
                 TextButton(onClick = {
                     confirmDelete = false
@@ -253,23 +257,23 @@ fun SessionDetailScreen(app: EscribaApp, sessionId: String, focus: Int, padding:
                         app.inbox.delete(s.id)
                         close()
                     }
-                }) { Text("Borrar", color = c.danger) }
+                }) { Text(stringResource(R.string.delete), color = c.danger) }
             },
-            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancelar") } },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(stringResource(R.string.cancel)) } },
         )
     }
 }
 
-/** De dónde sale el audio de una conversación. */
+/** Where a conversation's audio comes from. */
 private sealed interface AudioSource {
-    /** El `.ogg` junto a la nota, en la bóveda. */
+    /** The `.ogg` next to the note, in the vault. */
     data class Vault(val path: String) : AudioSource
 
-    /** Los fragmentos recibidos del reloj, en orden: se reproducen uno tras otro. */
+    /** The fragments received from the watch, in order: they're played one after another. */
     data class Phone(val files: List<java.io.File>) : AudioSource
 }
 
-/** Reproduce el audio de la conversación, de la bóveda o del móvil. */
+/** Plays the conversation's audio, from the vault or the phone. */
 @Composable
 private fun AudioButton(app: EscribaApp, source: AudioSource) {
     val context = LocalContext.current
@@ -295,10 +299,10 @@ private fun AudioButton(app: EscribaApp, source: AudioSource) {
                     }
                 }
                 if (uris.isEmpty()) {
-                    AppLog.e("ui", "No se encuentra el audio de la conversación")
+                    AppLog.e("ui", "The conversation's audio can't be found")
                     return@launch
                 }
-                // Cada fragmento es su propio .ogg: al acabar uno, empieza el siguiente.
+                // Each fragment is its own .ogg: when one ends, the next one starts.
                 fun play(index: Int): MediaPlayer = MediaPlayer().apply {
                     setDataSource(context, uris[index])
                     setOnCompletionListener { done ->
@@ -306,7 +310,7 @@ private fun AudioButton(app: EscribaApp, source: AudioSource) {
                         if (index + 1 < uris.size) {
                             runCatching { play(index + 1) }
                                 .onSuccess { player = it }
-                                .onFailure { AppLog.e("ui", "No se pudo seguir con el audio", it); player = null; playing = false }
+                                .onFailure { AppLog.e("ui", "Couldn't continue the audio", it); player = null; playing = false }
                         } else {
                             player = null
                             playing = false
@@ -317,16 +321,16 @@ private fun AudioButton(app: EscribaApp, source: AudioSource) {
                 }
                 runCatching { play(0) }
                     .onSuccess { player = it; playing = true }
-                    .onFailure { AppLog.e("ui", "No se pudo reproducir el audio", it) }
+                    .onFailure { AppLog.e("ui", "Couldn't play the audio", it) }
             }
         }
     }) {
         Icon(if (playing) EscribaIcons.Pause else Icons.Rounded.PlayArrow, null, Modifier.size(18.dp))
-        Text(if (playing) "  Pausar" else "  Escuchar")
+        Text("  " + stringResource(if (playing) R.string.pause else R.string.listen))
     }
 }
 
-/** Abre la nota en Obsidian (esquema obsidian://, sin Internet). */
+/** Opens the note in Obsidian (obsidian:// scheme, no Internet). */
 @Composable
 private fun OpenInObsidian(app: EscribaApp, path: String) {
     val context = LocalContext.current
@@ -339,7 +343,7 @@ private fun OpenInObsidian(app: EscribaApp, path: String) {
         try {
             context.startActivity(Intent(Intent.ACTION_VIEW, uri))
         } catch (e: ActivityNotFoundException) {
-            AppLog.e("ui", "Obsidian no está instalado", e)
+            AppLog.e("ui", "Obsidian isn't installed", e)
         }
-    }) { Text("Abrir en Obsidian") }
+    }) { Text(stringResource(R.string.open_in_obsidian)) }
 }

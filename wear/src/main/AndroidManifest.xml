@@ -13,7 +13,7 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
-    <!-- Privacidad: ninguna dependencia puede colar acceso a la red. -->
+    <!-- Privacy: no dependency can sneak in network access. -->
     <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
 
@@ -28,15 +28,15 @@
         android:theme="@android:style/Theme.DeviceDefault"
         tools:targetApi="36">
 
-        <!-- Necesita el móvil: no es una app independiente. -->
+        <!-- It needs the phone: it isn't a standalone app. -->
         <meta-data
             android:name="com.google.android.wearable.standalone"
             android:value="false" />
 
 
         <!--
-            Inicio rápido: alterna la grabación y se cierra. Tiene su propio icono en el
-            lanzador para poder asignarlo a un botón físico desde los ajustes del reloj.
+            Quick start: toggles the recording and closes. It has its own launcher icon so it can
+            be assigned to a hardware button from the watch settings.
         -->
         <activity
             android:name=".QuickStartActivity"
@@ -64,15 +64,15 @@
         </activity>
 
         <!--
-            La abre el Tile («Más…»). Tiene que estar exportada porque el Tile lo dibuja el sistema,
-            pero solo puede lanzarla quien tenga el permiso de enlazar Tiles: el propio sistema.
+            The Tile opens it ("More"). It must be exported because the system draws the Tile, but
+            only holders of the Tile binding permission can launch it: the system itself.
         -->
         <activity
             android:name=".ProfilePickerActivity"
             android:excludeFromRecents="true"
             android:exported="true"
             android:permission="com.google.android.wearable.permission.BIND_TILE_PROVIDER"
-            android:taskAffinity="dev.escriba.perfiles" />
+            android:taskAffinity="dev.escriba.profiles" />
 
         <service
             android:name=".recorder.RecorderService"

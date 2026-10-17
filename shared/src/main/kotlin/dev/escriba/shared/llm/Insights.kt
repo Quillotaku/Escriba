@@ -1,50 +1,52 @@
 package dev.escriba.shared.llm
 
 import dev.escriba.shared.EscribaJson
-import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import java.text.Normalizer
 import java.time.LocalDate
 import java.time.format.TextStyle
 import java.util.Locale
 
-/** Tarea extraída por el LLM. */
+/** A task extracted by the LLM. */
 @Serializable
 data class Task(
-    @SerialName("tarea") val text: String,
-    @SerialName("responsable") val owner: String? = null,
-    /** AAAA-MM-DD o null. */
-    @SerialName("fecha") val due: String? = null,
-)
+    val task: String,
+    val owner: String? = null,
+    /** YYYY-MM-DD or null. */
+    val due: String? = null,
+) {
+    /** The task's text (the JSON key is `task`, which reads better for the model). */
+    val text: String get() = task
+}
 
-/** Lo que el LLM saca de una conversación. Los nombres JSON van en español porque los ve el modelo. */
+/** What the LLM extracts from a conversation. The JSON keys are what the model sees. */
 @Serializable
 data class Insights(
-    @SerialName("titulo") val title: String,
-    @SerialName("resumen") val summary: String,
-    @SerialName("decisiones") val decisions: List<String> = emptyList(),
-    @SerialName("tareas") val tasks: List<Task> = emptyList(),
-    @SerialName("personas") val people: List<String> = emptyList(),
-    @SerialName("proyectos") val projects: List<String> = emptyList(),
-    @SerialName("clientes") val clients: List<String> = emptyList(),
-    @SerialName("etiquetas") val tags: List<String> = emptyList(),
-    @SerialName("trivial") val trivial: Boolean = false,
+    val title: String,
+    val summary: String,
+    val decisions: List<String> = emptyList(),
+    val tasks: List<Task> = emptyList(),
+    val people: List<String> = emptyList(),
+    val projects: List<String> = emptyList(),
+    val clients: List<String> = emptyList(),
+    val tags: List<String> = emptyList(),
+    val trivial: Boolean = false,
 ) {
     companion object {
         fun parse(json: String): Insights = EscribaJson.decodeFromString(json.trim())
     }
 }
 
-/** Respuesta del paso de fusión, cuando la conversación se procesó por trozos. */
+/** Answer of the merge step, when the conversation was processed in chunks. */
 @Serializable
 data class MergedSummary(
-    @SerialName("titulo") val title: String,
-    @SerialName("resumen") val summary: String,
+    val title: String,
+    val summary: String,
 )
 
 /**
- * Gramáticas GBNF para llama.cpp: el modelo solo puede generar JSON con exactamente estos campos
- * y en este orden. Así nunca hay que «arreglar» una respuesta mal formada.
+ * GBNF grammars for llama.cpp: the model can only produce JSON with exactly these fields, in this
+ * order. A malformed answer never needs "fixing".
  */
 object Grammars {
     private const val COMMON = """
@@ -56,28 +58,26 @@ ws ::= [ \t\n]? [ \t\n]? [ \t\n]? [ \t\n]?
 """
 
     val INSIGHTS = """
-root ::= "{" ws "\"titulo\":" ws string "," ws "\"resumen\":" ws string "," ws "\"decisiones\":" ws strarr "," ws "\"tareas\":" ws taskarr "," ws "\"personas\":" ws strarr "," ws "\"proyectos\":" ws strarr "," ws "\"clientes\":" ws strarr "," ws "\"etiquetas\":" ws strarr "," ws "\"trivial\":" ws bool ws "}"
+root ::= "{" ws "\"title\":" ws string "," ws "\"summary\":" ws string "," ws "\"decisions\":" ws strarr "," ws "\"tasks\":" ws taskarr "," ws "\"people\":" ws strarr "," ws "\"projects\":" ws strarr "," ws "\"clients\":" ws strarr "," ws "\"tags\":" ws strarr "," ws "\"trivial\":" ws bool ws "}"
 taskarr ::= "[" ws ( task ( "," ws task )* )? ws "]"
-task ::= "{" ws "\"tarea\":" ws string "," ws "\"responsable\":" ws nstring "," ws "\"fecha\":" ws ndate ws "}"
+task ::= "{" ws "\"task\":" ws string "," ws "\"owner\":" ws nstring "," ws "\"due\":" ws ndate ws "}"
 nstring ::= string | "null"
 ndate ::= "\"" [0-9] [0-9] [0-9] [0-9] "-" [0-9] [0-9] "-" [0-9] [0-9] "\"" | "null"
 """.trimStart() + COMMON
 
     val MERGED = """
-root ::= "{" ws "\"titulo\":" ws string "," ws "\"resumen\":" ws string ws "}"
+root ::= "{" ws "\"title\":" ws string "," ws "\"summary\":" ws string ws "}"
 """.trimStart() + COMMON
 }
 
-/** Texto del contexto que recibe el modelo: la fecha en palabras para que resuelva «el viernes». */
+/** Context text for the model: the date in words so it can resolve "on Friday". */
 object Dates {
-    private val ES = Locale.forLanguageTag("es-ES")
-
     fun spoken(date: LocalDate): String =
-        "${date.dayOfWeek.getDisplayName(TextStyle.FULL, ES)}, ${date.dayOfMonth} de ${date.month.getDisplayName(TextStyle.FULL, ES)} de ${date.year}"
+        "${date.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.ENGLISH)}, ${date.month.getDisplayName(TextStyle.FULL, Locale.ENGLISH)} ${date.dayOfMonth}, ${date.year}"
 
     /**
-     * Comprueba la fecha que devolvió el modelo: tiene que ser una fecha real y razonable (de ayer
-     * a tres años vista). Si no, se descarta en lugar de poner una fecha inventada en la tarea.
+     * Checks the date the model returned: it must be a real, reasonable date (from yesterday up
+     * to three years ahead). Otherwise it's dropped instead of putting a made-up date on the task.
      */
     fun validate(iso: String?, today: LocalDate): String? {
         val d = iso?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: return null
@@ -86,25 +86,25 @@ object Dates {
 }
 
 /**
- * Enlaza los nombres que menciona el LLM con notas que YA existen en la bóveda (Personas,
- * Proyectos, Clientes). Nunca crea enlaces nuevos: así no aparecen «[[Ana]]» y «[[Ana López]]»
- * como dos personas distintas.
+ * Links the names the LLM mentions to notes that ALREADY exist in the vault (People, Projects,
+ * Clients). It never creates new links, so "[[Ana]]" and "[[Ana López]]" don't show up as two
+ * different people.
  */
 class EntityLinker(known: Collection<String>) {
     private val byKey = known.associateBy(::key)
     private val all = known.toList()
 
-    /** El nombre de nota que corresponde a [name], o null si no hay ninguno claro. */
+    /** The note name matching [name], or null if there's no clear one. */
     fun match(name: String): String? {
         val k = key(name)
         if (k.isEmpty()) return null
         byKey[k]?.let { return it }
-        // «Ana» → «Ana López», solo si es la única que empieza así.
+        // "Ana" → "Ana López", only if she's the only one starting like that.
         val partial = all.filter { key(it).startsWith("$k ") || key(it).split(' ').contains(k) }
         return partial.singleOrNull()
     }
 
-    /** `[[Nota]]` si existe; si no, el nombre tal cual. */
+    /** `[[Note]]` if it exists; otherwise the name as is. */
     fun linkOrPlain(name: String): String = match(name)?.let { "[[$it]]" } ?: name.trim()
 
     companion object {
@@ -118,8 +118,8 @@ class EntityLinker(known: Collection<String>) {
 }
 
 /**
- * Une los resultados parciales de una conversación procesada por trozos. Las listas se juntan sin
- * repetidos; el título y el resumen finales los escribe el modelo en un paso de fusión aparte.
+ * Merges the partial results of a conversation processed in chunks. Lists are joined without
+ * duplicates; the final title and summary are written by the model in a separate merge step.
  */
 object InsightsMerger {
     fun merge(parts: List<Insights>, merged: MergedSummary): Insights = Insights(
@@ -131,7 +131,7 @@ object InsightsMerger {
         projects = distinct(parts.flatMap { it.projects }),
         clients = distinct(parts.flatMap { it.clients }),
         tags = distinct(parts.flatMap { it.tags }).take(6),
-        // Trivial solo si todos los trozos lo son.
+        // Trivial only if every chunk is.
         trivial = parts.isNotEmpty() && parts.all { it.trivial },
     )
 

@@ -3,9 +3,9 @@ package dev.escriba.mobile.transcription
 import kotlinx.coroutines.sync.Mutex
 
 /**
- * Hueco único para modelos grandes. Whisper (≈ 1 GB) y el LLM (2,5–5 GB) se turnan: quien quiera
- * cargar uno espera a que el otro se libere. Con 12 GB de RAM compartidos con el sistema y el
- * resto de apps, tener los dos a la vez es buscar que Android cierre Escriba.
+ * A single slot for large models. Whisper (≈ 1 GB) and the LLM (2.5–5 GB) take turns: whoever
+ * wants to load one waits for the other to be released. With 12 GB of RAM shared with the system
+ * and the other apps, having both at once is asking Android to kill Escriba.
  */
 class ModelSlot {
     val mutex = Mutex()

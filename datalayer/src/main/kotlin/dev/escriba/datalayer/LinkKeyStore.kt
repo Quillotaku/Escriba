@@ -13,15 +13,15 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-/** Dispositivo emparejado. */
+/** The paired device. */
 data class PairedPeer(val nodeId: String, val name: String, val keyId: String, val pairedAtMs: Long)
 
 /**
- * Guarda la clave del enlace. En disco va cifrada con una clave del Android Keystore que
- * nunca sale del hardware: copiar los archivos de la app no basta para leerla.
+ * Stores the link key. On disk it's encrypted with an Android Keystore key that never leaves the
+ * hardware: copying the app's files isn't enough to read it.
  */
 class LinkKeyStore(context: Context) {
-    private val prefs = context.applicationContext.getSharedPreferences("enlace", Context.MODE_PRIVATE)
+    private val prefs = context.applicationContext.getSharedPreferences("link", Context.MODE_PRIVATE)
 
     private val _peer = MutableStateFlow(loadPeer())
     val peer: StateFlow<PairedPeer?> = _peer
@@ -38,7 +38,7 @@ class LinkKeyStore(context: Context) {
                 init(Cipher.DECRYPT_MODE, wrappingKey(), GCMParameterSpec(128, Crypto.unb64(iv)))
             }
             SecureChannel(cipher.doFinal(Crypto.unb64(wrapped)))
-        }.onFailure { AppLog.e(TAG, "No se pudo abrir la clave del enlace", it) }
+        }.onFailure { AppLog.e(TAG, "Couldn't open the link key", it) }
             .getOrNull()
             ?.also { cached = it }
     }
@@ -84,13 +84,13 @@ class LinkKeyStore(context: Context) {
     }
 
     private companion object {
-        const val TAG = "enlace"
-        const val ALIAS = "escriba_enlace"
-        const val KEY_WRAPPED = "clave"
+        const val TAG = "link"
+        const val ALIAS = "escriba_link"
+        const val KEY_WRAPPED = "key"
         const val KEY_IV = "iv"
-        const val KEY_NODE = "nodo"
-        const val KEY_NAME = "nombre"
-        const val KEY_ID = "id_clave"
-        const val KEY_AT = "emparejado"
+        const val KEY_NODE = "node"
+        const val KEY_NAME = "name"
+        const val KEY_ID = "key_id"
+        const val KEY_AT = "paired_at"
     }
 }

@@ -4,45 +4,45 @@ import kotlin.math.log10
 import kotlin.math.max
 import kotlin.math.sqrt
 
-/** Sensibilidad del VAD: margen en dB sobre el ruido de fondo para considerar que hay voz. */
+/** VAD sensitivity: margin in dB over the background noise to consider it speech. */
 enum class VadSensitivity(val marginDb: Double) {
-    BAJA(12.0),
-    MEDIA(9.0),
-    ALTA(6.0),
+    LOW(12.0),
+    MEDIUM(9.0),
+    HIGH(6.0),
 }
 
 /**
- * Detector de voz por energía, con suelo de ruido adaptativo.
+ * Energy-based voice detector with an adaptive noise floor.
  *
- * Decide trama a trama (20 ms) si hay habla:
- *  - el suelo de ruido sigue al nivel en silencio (baja deprisa y sube despacio);
- *  - hay voz cuando la energía supera el suelo + margen y un mínimo absoluto;
- *  - hacen falta [onsetFrames] tramas seguidas para empezar, para ignorar golpes sueltos;
- *  - se conserva [preRollMs] de audio anterior para no cortar la primera palabra;
- *  - se mantiene [hangoverMs] tras la última trama con voz para no cortar entre frases.
+ * Decides frame by frame (20 ms) whether there is speech:
+ *  - the noise floor follows the level during silence (drops fast, rises slowly);
+ *  - it's speech when the energy is over the floor + margin and over an absolute minimum;
+ *  - [onsetFrames] voiced frames in a row are needed to start, to ignore single knocks;
+ *  - [preRollMs] of earlier audio is kept so the first word isn't cut;
+ *  - [hangoverMs] is kept after the last voiced frame so pauses between sentences aren't cut.
  *
- * Es deliberadamente sencillo y barato (una raíz cuadrada por trama). La interfaz permite
- * sustituirlo por WebRTC VAD o Silero en la fase 9 si la medición lo justifica.
+ * Deliberately simple and cheap (one square root per frame). The interface allows replacing it
+ * with WebRTC VAD or Silero if measurements justify it.
  */
 class SpeechGate(
     private val sampleRate: Int = 16_000,
     frameMs: Int = 20,
-    var sensitivity: VadSensitivity = VadSensitivity.MEDIA,
+    var sensitivity: VadSensitivity = VadSensitivity.MEDIUM,
     preRollMs: Int = 1_000,
     hangoverMs: Int = 1_500,
     private val onsetFrames: Int = 3,
     private val absoluteMinDb: Double = -62.0,
-    /** Si es NaN, el suelo se calibra con la primera trama (lo normal: al pulsar grabar aún no se habla). */
+    /** If NaN, the floor is calibrated on the first frame (normally nobody speaks yet when recording starts). */
     initialFloorDb: Double = Double.NaN,
 ) {
     sealed interface Event {
-        /** Empieza un tramo de voz; [startSample] incluye el pre-roll. */
+        /** A stretch of speech starts; [startSample] includes the pre-roll. */
         data class SpeechStarted(val startSample: Long) : Event
 
-        /** Trama a guardar. [samples] es una copia propia. */
+        /** Frame to store. [samples] is a private copy. */
         class Audio(val samples: ShortArray, val startSample: Long) : Event
 
-        /** Termina el tramo; [endSample] es la primera muestra que ya no forma parte de él. */
+        /** The stretch ends; [endSample] is the first sample no longer part of it. */
         data class SpeechEnded(val endSample: Long) : Event
     }
 
@@ -67,9 +67,9 @@ class SpeechGate(
 
     val isInSpeech: Boolean get() = inSpeech
 
-    /** Procesa una trama de exactamente [frameSamples] muestras. */
+    /** Processes a frame of exactly [frameSamples] samples. */
     fun process(frame: ShortArray, length: Int = frame.size): List<Event> {
-        require(length == frameSamples) { "Trama de $length muestras; se esperaban $frameSamples" }
+        require(length == frameSamples) { "Frame of $length samples; expected $frameSamples" }
         val start = position
         position += length
         totalFrames++
@@ -78,9 +78,8 @@ class SpeechGate(
         lastDb = db
         if (floorDb.isNaN()) floorDb = db.coerceIn(-90.0, -25.0)
         val voiced = db > floorDb + sensitivity.marginDb && db > absoluteMinDb
-        // Se adapta en todas las tramas: un fondo alto y constante (un ventilador, el coche) acaba
-        // siendo "suelo" en unos segundos, mientras que los huecos entre palabras de una voz real
-        // lo vuelven a bajar enseguida.
+        // Adapts on every frame: a loud, steady background (a fan, the car) becomes the "floor"
+        // within seconds, while the gaps between the words of a real voice bring it back down.
         adaptFloor(db)
 
         val copy = frame.copyOf(length)
@@ -111,7 +110,7 @@ class SpeechGate(
         return events
     }
 
-    /** Cierra el tramo abierto, si lo hay (al parar o pausar). */
+    /** Closes the open stretch, if any (on stop or pause). */
     fun flush(): List<Event> {
         preRoll.clear()
         candidateRun = 0
@@ -124,10 +123,10 @@ class SpeechGate(
 
     private fun adaptFloor(db: Double) {
         floorDb = if (db < floorDb) {
-            // Baja rápido: el ruido de fondo puede reducirse de golpe (p. ej., al apagar algo).
+            // Drops fast: background noise can stop suddenly (e.g. when something is switched off).
             floorDb + (db - floorDb) * 0.2
         } else {
-            // Sube despacio (~1 dB/s), para que una voz larga no se convierta en "ruido".
+            // Rises slowly (~1 dB/s), so a long monologue doesn't turn into "noise".
             floorDb + 0.02
         }
         floorDb = floorDb.coerceIn(-90.0, -25.0)

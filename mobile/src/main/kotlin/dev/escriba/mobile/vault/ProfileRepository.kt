@@ -19,16 +19,16 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
 /**
- * Perfiles leídos de la bóveda. Los archivos de `_config/escriba/` son la única fuente de verdad:
- * la app los lee cada vez que los necesita (son pocos y pequeños) y, si los edita, escribe en
- * esos mismos archivos.
+ * Profiles read from the vault. The files in `_config/escriba/` are the single source of truth:
+ * the app reads them every time it needs them (they're few and small) and, if it edits them, it
+ * writes to those same files.
  */
 class ProfileRepository(
     context: Context,
     private val vault: VaultAccess,
     private val link: DataLayerLink,
 ) {
-    private val prefs = context.applicationContext.getSharedPreferences("perfiles", Context.MODE_PRIVATE)
+    private val prefs = context.applicationContext.getSharedPreferences("profiles", Context.MODE_PRIVATE)
     private val mutex = Mutex()
 
     private val _set = MutableStateFlow<ProfileSet?>(null)
@@ -36,8 +36,8 @@ class ProfileRepository(
 
     init {
         link.handle(Protocol.PATH_PROFILES_REQUEST) { event ->
-            link.openSealed<ProfilesRequest>(event) // solo el reloj emparejado puede pedirlos
-            AppLog.i(TAG, "El reloj pide los perfiles")
+            link.openSealed<ProfilesRequest>(event) // only the paired watch can ask for them
+            AppLog.i(TAG, "The watch asks for the profiles")
             reload()
             syncToWatch(force = true)
         }
@@ -57,25 +57,25 @@ class ProfileRepository(
         }
     }
 
-    /** Envía al reloj la lista de perfiles si ha cambiado desde el último envío (o siempre con [force]). */
+    /** Sends the profile list to the watch if it changed since the last time (or always with [force]). */
     suspend fun syncToWatch(force: Boolean = false): Boolean {
         val set = _set.value ?: reload() ?: return false
         if (set.profiles.isEmpty()) return false
         val list = set.forWatch()
         if (!force && prefs.getString(KEY_SENT, null) == list.hash) return true
         val sent = runCatching { link.sendSealed(Protocol.PATH_PROFILES, list) }
-            .onFailure { AppLog.e(TAG, "No se pudieron enviar los perfiles", it) }
+            .onFailure { AppLog.e(TAG, "Couldn't send the profiles", it) }
             .getOrDefault(false)
         if (sent) {
             prefs.edit().putString(KEY_SENT, list.hash).apply()
-            AppLog.i(TAG, "Perfiles enviados al reloj: ${list.profiles.joinToString { it.name }}")
+            AppLog.i(TAG, "Profiles sent to the watch: ${list.profiles.joinToString { it.name }}")
         }
         return sent
     }
 
     fun template(path: String?): String? = path?.let { vault.readText(if (it.endsWith(".md")) it else "$it.md") }
 
-    /** Texto actual de un perfil y su fecha de modificación (para detectar ediciones simultáneas). */
+    /** A profile's current text and modification date (to detect concurrent edits). */
     fun readProfile(id: String): Pair<String, Long?>? {
         val path = "${VaultBootstrap.PROFILES_DIR}/$id.md"
         val text = vault.readText(path) ?: return null
@@ -83,22 +83,22 @@ class ProfileRepository(
     }
 
     /**
-     * Guarda los cambios hechos desde la app. Conserva las propiedades que la app no edita.
-     * Si el archivo cambió desde que se abrió el editor (p. ej. en Obsidian), no sobrescribe.
+     * Saves the changes made from the app. It keeps the properties the app doesn't edit.
+     * If the file changed since the editor was opened (e.g. in Obsidian), it doesn't overwrite.
      */
     suspend fun saveProfile(id: String, changes: Map<String, YamlValue>, prompt: String?, openedAt: Long?): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val path = "${VaultBootstrap.PROFILES_DIR}/$id.md"
             val current = vault.readText(path)
             if (current != null && openedAt != null && (vault.lastModified(path) ?: 0) > openedAt) {
-                error("El perfil se ha modificado en otro sitio (¿Obsidian?) mientras lo editabas. Vuelve a abrirlo.")
+                error("The profile was changed somewhere else (Obsidian?) while you were editing it. Open it again.")
             }
             val (fm, _) = Frontmatter.parse(current ?: "")
             val props = LinkedHashMap(fm.properties)
             changes.forEach { (k, v) -> if (v == YamlValue.Empty) props.remove(k) else props[k] = v }
-            // prompt nulo: no se toca el cuerpo (un perfil hijo sigue heredando el prompt del padre).
+            // null prompt: the body isn't touched (a child profile keeps inheriting its parent's prompt).
             vault.writeText(path, Frontmatter.note(props, if (prompt == null) fm.body else replacePrompt(fm.body, prompt)))
-            AppLog.i(TAG, "Perfil «$id» guardado desde la app")
+            AppLog.i(TAG, "Profile \"$id\" saved from the app")
             reload()
             syncToWatch()
             Unit
@@ -106,30 +106,30 @@ class ProfileRepository(
     }
 
     /**
-     * Crea un perfil nuevo en la bóveda y devuelve su id (el nombre del archivo). Si se basa en
-     * otro, solo lleva `hereda:` y lo propio; si no, unos valores de partida razonables.
+     * Creates a new profile in the vault and returns its id (the file name). If it's based on
+     * another, it only carries `inherits:` and its own values; otherwise, sensible defaults.
      */
     suspend fun createProfile(name: String, basedOn: String?, color: String): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
             val clean = name.trim()
-            require(clean.isNotEmpty()) { "Ponle un nombre al perfil" }
-            val base = profileSlug(clean).ifEmpty { "perfil" }
+            require(clean.isNotEmpty()) { "Give the profile a name" }
+            val base = profileSlug(clean).ifEmpty { "profile" }
             var id = base
             var n = 2
             while (vault.exists("${VaultBootstrap.PROFILES_DIR}/$id.md")) id = "$base-${n++}"
-            val props = linkedMapOf<String, YamlValue>("nombre" to YamlValue.Text(clean), "color" to YamlValue.Text(color))
+            val props = linkedMapOf<String, YamlValue>("name" to YamlValue.Text(clean), "color" to YamlValue.Text(color))
             val body = if (basedOn != null) {
-                props["hereda"] = YamlValue.Text(basedOn)
-                // Cuerpo vacío: sin «## Prompt» propio, el prompt también se hereda.
+                props["inherits"] = YamlValue.Text(basedOn)
+                // Empty body: without its own "## Prompt", the prompt is inherited too.
                 ""
             } else {
-                props["icono"] = YamlValue.Text("mic")
-                props["modo"] = YamlValue.Text("bajo_demanda")
-                props["carpeta"] = YamlValue.Text(clean)
-                "## Prompt\nResume la conversación en unas líneas y extrae las decisiones y las tareas.\n"
+                props["icon"] = YamlValue.Text("mic")
+                props["mode"] = YamlValue.Text(ProfileLoader.MODE_ON_DEMAND)
+                props["folder"] = YamlValue.Text(clean)
+                "## Prompt\nSummarize the conversation in a few lines and extract the decisions and tasks.\n"
             }
             vault.writeText("${VaultBootstrap.PROFILES_DIR}/$id.md", Frontmatter.note(props, body))
-            AppLog.i(TAG, "Perfil «$id» creado desde la app" + (basedOn?.let { " (hereda de $it)" } ?: ""))
+            AppLog.i(TAG, "Profile \"$id\" created from the app" + (basedOn?.let { " (inherits from $it)" } ?: ""))
             reload()
             syncToWatch()
             id
@@ -146,7 +146,7 @@ class ProfileRepository(
 
     private fun writeErrorReport(set: ProfileSet) {
         val body = if (set.errors.isEmpty()) {
-            "Ninguno. ✓\n"
+            "None. ✓\n"
         } else {
             buildString {
                 for ((file, errors) in set.errors) {
@@ -156,22 +156,22 @@ class ProfileRepository(
                 }
             }
         }
-        val stamp = "Revisado: " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
-        val report = "# Errores de configuración\n\n$stamp\n\n$body"
-        // Solo se escribe si cambia algo más que la fecha: no tiene sentido despertar a YAOS para nada.
-        fun withoutStamp(text: String?) = text?.lines()?.filterNot { it.startsWith("Revisado: ") }?.joinToString("\n")
+        val stamp = "Checked: " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
+        val report = "# Configuration errors\n\n$stamp\n\n$body"
+        // Only written if more than the date changed: no point waking up the sync tool for nothing.
+        fun withoutStamp(text: String?) = text?.lines()?.filterNot { it.startsWith("Checked: ") }?.joinToString("\n")
         if (withoutStamp(vault.readText(VaultBootstrap.ERRORS_FILE)) != withoutStamp(report)) {
             runCatching { vault.writeText(VaultBootstrap.ERRORS_FILE, report) }
         }
     }
 
     private companion object {
-        const val TAG = "perfiles"
-        const val KEY_SENT = "enviado"
+        const val TAG = "profiles"
+        const val KEY_SENT = "sent"
     }
 }
 
-/** «Reuniones Acme» → «reuniones-acme»: el id de un perfil es el nombre de su archivo. */
+/** "Acme Meetings" → "acme-meetings": a profile's id is its file name. */
 internal fun profileSlug(text: String): String =
     java.text.Normalizer.normalize(text, java.text.Normalizer.Form.NFD)
         .replace(Regex("\\p{M}+"), "")

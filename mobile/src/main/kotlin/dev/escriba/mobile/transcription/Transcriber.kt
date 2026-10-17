@@ -9,14 +9,14 @@ import dev.escriba.shared.transcription.TranscriptLine
 import java.io.Closeable
 
 /**
- * Transcribe conversaciones con Whisper o con Parakeet.
+ * Transcribes conversations with Whisper or Parakeet.
  *
- * Une el audio de voz de todos los fragmentos de la conversación, lo trocea en bloques de ≤30 s
- * cortados en los silencios y traduce cada frase a su hora real con la tabla de segmentos.
+ * It joins the speech audio of all the conversation's fragments, splits it into ≤30 s chunks cut
+ * at the silences and maps each line to its real time with the segment table.
  */
 class Transcriber(private val models: ModelStore, private val slot: ModelSlot) {
 
-    enum class Motor { WHISPER, PARAKEET }
+    enum class Engine { WHISPER, PARAKEET }
 
     data class Stats(
         val model: String,
@@ -29,17 +29,17 @@ class Transcriber(private val models: ModelStore, private val slot: ModelSlot) {
         val segmentsKept: Int,
         val flashAttn: Boolean,
         val fast: Boolean,
-        /** Suma de los bloques: codificador y decodificador (solo Whisper los da). */
+        /** Sum over the chunks: encoder and decoder (only Whisper reports them). */
         val encodeMs: Long,
         val decodeTextMs: Long,
     ) {
-        /** Tiempo de cálculo por segundo de audio: < 1 es más rápido que el tiempo real. */
+        /** Compute time per second of audio: < 1 is faster than real time. */
         val realTimeFactor: Double get() = if (audioMs > 0) transcribeMs.toDouble() / audioMs else 0.0
     }
 
     data class Result(val lines: List<TranscriptLine>, val stats: Stats)
 
-    /** Modelo cargado para una tanda de trabajo; se libera con [Session.close]. */
+    /** Model loaded for a batch of work; released with [Session.close]. */
     inner class Session(private val engine: AsrEngine, val loadMs: Long, private val flashAttn: Boolean) : Closeable {
         val modelName: String get() = engine.name
 
@@ -54,14 +54,14 @@ class Transcriber(private val models: ModelStore, private val slot: ModelSlot) {
             val audio = SpeechAudio.decode(fragments)
             val decodeMs = System.currentTimeMillis() - decodeStart
 
-            // El vocabulario del perfil orienta a Whisper con nombres propios y jerga.
+            // The profile's vocabulary steers Whisper towards proper names and jargon.
             val prompt = if (engine.supportsPrompt) vocabulary.takeIf { it.isNotEmpty() }?.joinToString(", ", postfix = ".") else null
 
             val transcribeStart = System.currentTimeMillis()
             val raw = ArrayList<HallucinationFilter.Input>()
             var encodeMs = 0f
             var decodeTextMs = 0f
-            // Bloques de hasta 30 s cortados en los silencios: una sola pasada del codificador por bloque.
+            // Chunks of up to 30 s cut at the silences: a single encoder pass per chunk.
             for (range in Chunker.plan(audio.segments)) {
                 val from = (range.first * 16).toInt().coerceIn(0, audio.pcm.size)
                 val to = ((range.last + 1) * 16).toInt().coerceIn(from, audio.pcm.size)
@@ -84,8 +84,8 @@ class Transcriber(private val models: ModelStore, private val slot: ModelSlot) {
                 engine.name, audio.durationMs, loadMs, decodeMs, transcribeMs, threads, raw.size, kept.size,
                 flashAttn, fast, encodeMs.toLong(), decodeTextMs.toLong(),
             )
-            AppLog.i(TAG, "Transcrito con ${engine.name}: ${stats.audioMs / 1000} s de audio en ${transcribeMs / 1000} s " +
-                "(×%.2f del tiempo real, %d hilos), %d/%d frases".format(stats.realTimeFactor, threads, kept.size, raw.size))
+            AppLog.i(TAG, "Transcribed with ${engine.name}: ${stats.audioMs / 1000} s of audio in ${transcribeMs / 1000} s " +
+                "(×%.2f of real time, %d threads), %d/%d lines".format(stats.realTimeFactor, threads, kept.size, raw.size))
             return Result(lines, stats)
         }
 
@@ -96,16 +96,16 @@ class Transcriber(private val models: ModelStore, private val slot: ModelSlot) {
     }
 
     /**
-     * Carga el motor. Para Whisper, [name] es el modelo (`large-v3-turbo-q8_0`); Parakeet tiene
-     * un único modelo. Solo hay un modelo grande cargado a la vez: los demás esperan.
+     * Loads the engine. For Whisper, [name] is the model (`large-v3-turbo-q8_0`); Parakeet has a
+     * single model. Only one large model is loaded at a time: the others wait.
      */
-    suspend fun open(name: String, flashAttn: Boolean = true, motor: Motor = Motor.WHISPER): Session {
+    suspend fun open(name: String, flashAttn: Boolean = true, engine: Engine = Engine.WHISPER): Session {
         slot.mutex.lock()
         try {
             val start = System.currentTimeMillis()
-            val engine: AsrEngine = when (motor) {
-                Motor.WHISPER -> {
-                    val entry = models.find(name) ?: error("No hay ningún modelo «$name» en la carpeta de modelos")
+            val asr: AsrEngine = when (engine) {
+                Engine.WHISPER -> {
+                    val entry = models.find(name) ?: error("There's no model \"$name\" in the models folder")
                     val file = models.open(entry)
                     val whisper = runCatching { WhisperEngine.load(file.fd, entry.name, flashAttn) }.getOrElse {
                         file.close()
@@ -113,8 +113,8 @@ class Transcriber(private val models: ModelStore, private val slot: ModelSlot) {
                     }
                     WhisperAsr(whisper, file)
                 }
-                Motor.PARAKEET -> {
-                    val progress: (Long, Long) -> Unit = { c, t -> AppLog.i(TAG, "Copiando Parakeet a la app: $c/$t MB (solo la primera vez)") }
+                Engine.PARAKEET -> {
+                    val progress: (Long, Long) -> Unit = { c, t -> AppLog.i(TAG, "Copying Parakeet into the app: $c/$t MB (first time only)") }
                     ParakeetAsr(
                         encoder = models.localPathOf(ParakeetAsr.ENCODER, progress),
                         decoder = models.localPathOf(ParakeetAsr.DECODER),
@@ -125,8 +125,8 @@ class Transcriber(private val models: ModelStore, private val slot: ModelSlot) {
                 }
             }
             val loadMs = System.currentTimeMillis() - start
-            AppLog.i(TAG, "Motor ${engine.name} cargado en ${loadMs} ms")
-            return Session(engine, loadMs, flashAttn)
+            AppLog.i(TAG, "Engine ${asr.name} loaded in $loadMs ms")
+            return Session(asr, loadMs, flashAttn)
         } catch (e: Throwable) {
             slot.mutex.unlock()
             throw e
@@ -134,8 +134,8 @@ class Transcriber(private val models: ModelStore, private val slot: ModelSlot) {
     }
 
     private companion object {
-        const val TAG = "transcripcion"
-        /** Menos de 0,3 s no tiene palabras que transcribir (y Whisper alucina con ellas). */
+        const val TAG = "transcription"
+        /** Less than 0.3 s has no words to transcribe (and Whisper hallucinates on it). */
         const val MIN_CHUNK_SAMPLES = 16_000 * 3 / 10
     }
 }

@@ -76,7 +76,7 @@ class EscribaApp : Application() {
     lateinit var onboarding: Onboarding
         private set
 
-    /** Para tareas sueltas de la app que no dependen de ninguna pantalla. */
+    /** For loose app tasks that don't depend on any screen. */
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
@@ -96,14 +96,13 @@ class EscribaApp : Application() {
         appearance = Appearance(this)
         onboarding = Onboarding(this)
         processor = SessionProcessor(db, vault, profiles, transcriber, summarizer, Diarizer(models, slot), voices, notes)
-        benchmark = Benchmark(scope, db, transcriber, summarizer, profiles, processor)
+        benchmark = Benchmark(this, scope, db, transcriber, summarizer, profiles, processor)
         inbox = Inbox(File(filesDir, "inbox"), link, db) { sessionId, speechMs -> ProcessWorker.enqueue(this, sessionId, speechMs = speechMs) }
         RetentionWorker.schedule(this)
 
-        // Al abrir la app: perfiles al día (y al reloj, si han cambiado) y sesiones que se quedaron sin procesar.
+        // When the app opens: profiles up to date (and sent to the watch, if they changed) and sessions left unprocessed.
         scope.launch {
             if (!vault.isConfigured) return@launch
-            runCatching { VaultBootstrap.repair(vault) }.getOrNull()?.takeIf { it.isNotEmpty() }?.let { AppLog.i("boveda", "Reparado: ${it.joinToString()}") }
             runCatching { profiles.reload(); profiles.syncToWatch() }
             db.sessions().unprocessed().filter { it.isComplete }.forEach { ProcessWorker.enqueue(this@EscribaApp, it.id, speechMs = it.speechMs) }
         }

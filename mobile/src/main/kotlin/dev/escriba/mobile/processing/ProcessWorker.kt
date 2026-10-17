@@ -20,11 +20,11 @@ import dev.escriba.mobile.R
 import java.util.concurrent.TimeUnit
 
 /**
- * Procesa una sesión en segundo plano (transcripción + notas).
+ * Processes a session in the background (transcription + notes).
  *
- * La transcripción de una sesión larga dura muchos minutos, más que los 10 que WorkManager
- * concede a un trabajo normal: se ejecuta como servicio en primer plano de tipo
- * `mediaProcessing`, con una notificación que dice qué está haciendo.
+ * Transcribing a long session takes many minutes, more than the 10 WorkManager grants a normal
+ * job: it runs as a `mediaProcessing` foreground service, with a notification saying what it's
+ * doing.
  */
 class ProcessWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
 
@@ -33,39 +33,41 @@ class ProcessWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         val sessionId = inputData.getString(KEY_SESSION) ?: return Result.failure()
         val profile = inputData.getString(KEY_PROFILE)
 
-        promote(sessionId, "Preparando la sesión…")
+        promote(sessionId, getString(R.string.step_preparing))
         return runCatching {
             app.processor.process(sessionId, profile) { step ->
                 when (step) {
-                    is SessionProcessor.Step.Transcribing -> promote(sessionId, "Transcribiendo ${step.speechSeconds / 60} min ${step.speechSeconds % 60} s de voz…")
-                    is SessionProcessor.Step.Diarizing -> promote(sessionId, "Separando hablantes en ${step.speechSeconds / 60} min de voz…")
-                    is SessionProcessor.Step.Summarizing -> promote(sessionId, "Resumiendo con ${step.model}…")
-                    SessionProcessor.Step.Writing -> promote(sessionId, "Escribiendo la nota…")
+                    is SessionProcessor.Step.Transcribing -> promote(sessionId, getString(R.string.step_transcribing, step.speechSeconds / 60, step.speechSeconds % 60))
+                    is SessionProcessor.Step.Diarizing -> promote(sessionId, getString(R.string.step_diarizing, step.speechSeconds / 60))
+                    is SessionProcessor.Step.Summarizing -> promote(sessionId, getString(R.string.step_summarizing, step.model))
+                    SessionProcessor.Step.Writing -> promote(sessionId, getString(R.string.step_writing))
                 }
             }
         }.also { ProcessingStatus.clear(sessionId) }.fold(
             onSuccess = { Result.success() },
             onFailure = {
-                AppLog.e("procesado", "No se pudo procesar la sesión ${sessionId.take(8)}", it)
+                AppLog.e(TAG, "Couldn't process session ${sessionId.take(8)}", it)
                 if (runAttemptCount < 5) Result.retry() else Result.failure()
             },
         )
     }
 
+    private fun getString(id: Int, vararg args: Any): String = applicationContext.getString(id, *args)
+
     private suspend fun promote(sessionId: String, text: String) {
         ProcessingStatus.set(sessionId, text)
         runCatching { setForeground(foregroundInfo(text)) }
-            // Puede fallar si Android no deja arrancar un servicio desde segundo plano (Escriba debe
-            // estar fuera de la optimización de batería). El trabajo sigue, pero con el límite de 10 min.
-            .onFailure { AppLog.e("procesado", "No se pudo pasar a primer plano", it) }
+            // It may fail if Android doesn't allow starting a service from the background (Escriba
+            // must be exempt from battery optimization). The work goes on, but with the 10 min limit.
+            .onFailure { AppLog.e(TAG, "Couldn't move to the foreground", it) }
     }
 
     private fun foregroundInfo(text: String): ForegroundInfo {
         val manager = applicationContext.getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(NotificationChannel(CHANNEL, "Procesado de grabaciones", NotificationManager.IMPORTANCE_LOW))
+        manager.createNotificationChannel(NotificationChannel(CHANNEL, getString(R.string.channel_processing), NotificationManager.IMPORTANCE_LOW))
         val notification = NotificationCompat.Builder(applicationContext, CHANNEL)
             .setSmallIcon(R.drawable.ic_launcher_monochrome)
-            .setContentTitle("Escriba")
+            .setContentTitle(getString(R.string.app_name))
             .setContentText(text)
             .setOngoing(true)
             .setSilent(true)
@@ -74,16 +76,17 @@ class ProcessWorker(context: Context, params: WorkerParameters) : CoroutineWorke
     }
 
     companion object {
-        private const val KEY_SESSION = "sesion"
-        private const val KEY_PROFILE = "perfil"
-        private const val CHANNEL = "procesado"
+        private const val TAG = "processing"
+        private const val KEY_SESSION = "session"
+        private const val KEY_PROFILE = "profile"
+        private const val CHANNEL = "processing"
         private const val NOTIFICATION_ID = 10
 
-        /** Las sesiones con más voz que esto esperan a que el móvil esté cargando. */
+        /** Sessions with more speech than this wait until the phone is charging. */
         const val CHARGING_THRESHOLD_MS = 10 * 60_000L
 
         /**
-         * [speechMs] decide si espera a la carga. [now] fuerza el procesado inmediato (botón de la app).
+         * [speechMs] decides whether it waits for the charger. [now] forces immediate processing (app button).
          */
         fun enqueue(context: Context, sessionId: String, profileOverride: String? = null, speechMs: Long = 0, now: Boolean = false) {
             val waitForCharger = !now && speechMs > CHARGING_THRESHOLD_MS
@@ -92,8 +95,8 @@ class ProcessWorker(context: Context, params: WorkerParameters) : CoroutineWorke
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 1, TimeUnit.MINUTES)
                 .setConstraints(Constraints.Builder().setRequiresCharging(waitForCharger).build())
                 .build()
-            WorkManager.getInstance(context).enqueueUniqueWork("procesar-$sessionId", ExistingWorkPolicy.REPLACE, request)
-            if (waitForCharger) AppLog.i("procesado", "Sesión ${sessionId.take(8)} larga (${speechMs / 60_000} min de voz): se procesará cargando")
+            WorkManager.getInstance(context).enqueueUniqueWork("process-$sessionId", ExistingWorkPolicy.REPLACE, request)
+            if (waitForCharger) AppLog.i(TAG, "Long session ${sessionId.take(8)} (${speechMs / 60_000} min of speech): it'll be processed while charging")
         }
     }
 }

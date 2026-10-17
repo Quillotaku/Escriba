@@ -6,7 +6,7 @@ import java.util.Base64
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
-/** Utilidades criptográficas comunes. Todo es JCA estándar: funciona igual en Android y en la JVM. */
+/** Common crypto helpers. All standard JCA: works the same on Android and on the JVM. */
 object Crypto {
     private val random = SecureRandom()
 
@@ -43,7 +43,7 @@ object Crypto {
         return out
     }
 
-    /** Comparación en tiempo constante. */
+    /** Constant-time comparison. */
     fun constantTimeEquals(a: ByteArray, b: ByteArray): Boolean = MessageDigest.isEqual(a, b)
 
     fun b64(bytes: ByteArray): String = Base64.getEncoder().encodeToString(bytes)

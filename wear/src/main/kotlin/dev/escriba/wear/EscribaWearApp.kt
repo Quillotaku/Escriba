@@ -47,22 +47,22 @@ class EscribaWearApp : Application() {
         profiles = WatchProfiles(this, link)
         recoverAfterCrash()
         UploadWorker.ensurePeriodic(this)
-        // Sin perfiles todavía (recién instalado o emparejado): se piden al móvil.
+        // No profiles yet (just installed or paired): ask the phone for them.
         if (profiles.list.value == null) scope.launch { profiles.requestFromPhone() }
     }
 
     /**
-     * Un proceso nuevo nunca tiene una grabación en curso, así que todo lo que haya a medias
-     * es de un proceso anterior: se cierra y, si el usuario estaba grabando, se le avisa.
+     * A new process never has a recording in progress, so anything half done belongs to a
+     * previous process: it's closed and, if the user was recording, they're told.
      */
     private fun recoverAfterCrash() {
         val recovered = runCatching { store.recover() }
-            .onFailure { AppLog.e("store", "Fallo en la recuperación", it) }
+            .onFailure { AppLog.e("store", "Recovery failed", it) }
             .getOrDefault(0)
         val intent = RecordingIntent(this)
         if (intent.active) {
-            AppLog.i("rec", "La grabación anterior (origen=${intent.origin}) se cortó; $recovered fragmentos recuperados")
-            RecorderNotifications.showInterrupted(this, "La grabación se cortó")
+            AppLog.i("rec", "The previous recording (origin=${intent.origin}) was cut off; $recovered fragments recovered")
+            RecorderNotifications.showInterrupted(this, R.string.interrupted_cut)
             intent.clear()
         }
     }

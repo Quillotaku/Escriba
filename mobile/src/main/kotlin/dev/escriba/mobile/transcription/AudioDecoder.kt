@@ -7,14 +7,14 @@ import dev.escriba.shared.transcription.Pcm
 import java.io.File
 import java.nio.ByteOrder
 
-/** Decodifica un fragmento Ogg/Opus a PCM float 16 kHz mono, lo que espera Whisper. */
+/** Decodes an Ogg/Opus fragment into 16 kHz mono float PCM, which is what Whisper expects. */
 object AudioDecoder {
 
     fun decode(file: File): FloatArray {
         val extractor = MediaExtractor()
         try {
             extractor.setDataSource(file.path)
-            require(extractor.trackCount > 0) { "${file.name} no tiene pistas de audio" }
+            require(extractor.trackCount > 0) { "${file.name} has no audio tracks" }
             val format = extractor.getTrackFormat(0)
             extractor.selectTrack(0)
             var rate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)

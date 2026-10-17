@@ -31,6 +31,7 @@ import dev.escriba.shared.vault.ProfilePalette
 import dev.escriba.shared.vault.WatchProfile
 import dev.escriba.wear.EscribaWearApp
 import dev.escriba.wear.ProfilePickerActivity
+import dev.escriba.wear.R
 import dev.escriba.wear.recorder.RecorderService
 import dev.escriba.wear.recorder.RecordingState
 import java.time.Instant
@@ -38,15 +39,14 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 /**
- * Tile de Escriba, con los componentes Material 3 de los Tiles (como los del sistema).
+ * Escriba's Tile, built with the Tiles Material 3 components (like the system ones).
  *
- *  - Parado: los perfiles favoritos como botones de su color; tocar uno empieza a grabar con él.
- *    El botón del borde, «Más», abre la lista con todos.
- *  - Grabando o en pausa: el perfil activo y desde cuándo graba, botones para cambiar a otro
- *    perfil (cierra la sesión y abre otra) y «Parar» en el borde, en minio.
+ *  - Stopped: the favourite profiles as buttons in their colour; tapping one starts recording
+ *    with it. The edge button, "More", opens the list with all of them.
+ *  - Recording or paused: the active profile and since when it's recording, buttons to switch to
+ *    another profile (closes the session and opens another) and "Stop" on the edge, in minium.
  *
- * En la fase 1 se comprobó que HyperOS deja arrancar el servicio de micrófono directamente
- * desde el Tile, sin pasar por una actividad.
+ * HyperOS lets the Tile start the microphone service directly, without going through an activity.
  */
 class EscribaTileService : TileService() {
 
@@ -65,7 +65,7 @@ class EscribaTileService : TileService() {
                 RecordingState.Phase.IDLE -> idleLayout(favourites)
                 else -> recordingLayout(
                     paused = phase == RecordingState.Phase.PAUSED,
-                    name = live.profileName ?: active?.name ?: "Escriba",
+                    name = live.profileName ?: active?.name ?: getString(R.string.app_name),
                     color = live.profileColor ?: active?.color,
                     since = live.startedAtMs,
                     pausedUntil = live.pausedUntil,
@@ -76,7 +76,7 @@ class EscribaTileService : TileService() {
 
         val tile = TileBuilders.Tile.Builder()
             .setResourcesVersion(RESOURCES_VERSION)
-            // Mientras graba, se refresca cada minuto para que «desde las…» y la pausa estén al día.
+            // While recording, it refreshes every minute so "since…" and the pause stay current.
             .setFreshnessIntervalMillis(if (phase == RecordingState.Phase.IDLE) 0 else 60_000)
             .setTileTimeline(TimelineBuilders.Timeline.fromLayoutElement(layout))
             .build()
@@ -86,18 +86,18 @@ class EscribaTileService : TileService() {
     override fun onTileResourcesRequest(requestParams: RequestBuilders.ResourcesRequest): ListenableFuture<ResourceBuilders.Resources> =
         immediate(ResourceBuilders.Resources.Builder().setVersion(RESOURCES_VERSION).build())
 
-    // --- Diseños -------------------------------------------------------------
+    // --- Layouts -------------------------------------------------------------
 
     private fun MaterialScope.idleLayout(favourites: List<WatchProfile>) = primaryLayout(
-        titleSlot = { title("Escriba") },
+        titleSlot = { title(getString(R.string.app_name)) },
         mainSlot = {
             if (favourites.isEmpty()) {
-                text(LayoutString("Elige la bóveda en el móvil para tener perfiles"), typography = Typography.BODY_SMALL, color = MUTED, maxLines = 3)
+                text(LayoutString(getString(R.string.tile_no_profiles)), typography = Typography.BODY_SMALL, color = MUTED, maxLines = 3)
             } else {
                 profileButtons(favourites.take(3), fill = true)
             }
         },
-        bottomSlot = { textEdgeButton(onClick = clickable(openPicker(), ID_MORE), colors = tonal()) { label("Más") } },
+        bottomSlot = { textEdgeButton(onClick = clickable(openPicker(), ID_MORE), colors = tonal()) { label(getString(R.string.tile_more)) } },
     )
 
     private fun MaterialScope.recordingLayout(
@@ -108,7 +108,7 @@ class EscribaTileService : TileService() {
         pausedUntil: String?,
         others: List<WatchProfile>,
     ) = primaryLayout(
-        titleSlot = { title(if (paused) "En pausa" else "Grabando", if (paused) MUTED else MINIUM) },
+        titleSlot = { title(getString(if (paused) R.string.paused else R.string.tile_recording), if (paused) MUTED else MINIUM) },
         mainSlot = {
             val column = LayoutElementBuilders.Column.Builder()
                 .setWidth(expand())
@@ -117,8 +117,8 @@ class EscribaTileService : TileService() {
                 .addContent(
                     text(
                         LayoutString(
-                            if (paused) pausedUntil?.let { "vuelve a las $it" } ?: "fuera de horario"
-                            else "desde las " + Instant.ofEpochMilli(since).atZone(ZoneId.systemDefault()).format(HM),
+                            if (paused) pausedUntil?.let { getString(R.string.tile_back, it) } ?: getString(R.string.tile_off_schedule)
+                            else getString(R.string.tile_since, Instant.ofEpochMilli(since).atZone(ZoneId.systemDefault()).format(HM)),
                         ),
                         typography = Typography.BODY_SMALL,
                         color = MUTED,
@@ -135,11 +135,11 @@ class EscribaTileService : TileService() {
             textEdgeButton(
                 onClick = clickable(ActionBuilders.LoadAction.Builder().build(), ID_STOP),
                 colors = ButtonColors(containerColor = MINIUM, labelColor = INK_ON_COLOR, iconColor = INK_ON_COLOR, secondaryLabelColor = INK_ON_COLOR),
-            ) { label("Parar") }
+            ) { label(getString(R.string.stop)) }
         },
     )
 
-    /** Una fila de hasta tres botones de perfil. Rellenos de su color o, para cambiar, tonales. */
+    /** A row of up to three profile buttons. Filled with their colour or, for switching, tonal. */
     private fun MaterialScope.profileButtons(list: List<WatchProfile>, tonal: Boolean = false, fill: Boolean = false) =
         buttonGroup(width = expand(), height = if (fill) expand() else wrap()) {
             list.forEach { p ->
@@ -164,7 +164,7 @@ class EscribaTileService : TileService() {
         text(LayoutString(text), typography = Typography.TITLE_MEDIUM, color = color, maxLines = 1)
 
     private fun MaterialScope.label(text: String, color: LayoutColor = INK) =
-        // Los nombres largos («Ideas Rápidas») bajan un punto para caber sin cortarse.
+        // Long names ("Quick Ideas") go down a size to fit without being cut.
         text(LayoutString(text), typography = if (text.length > 10) Typography.LABEL_SMALL else Typography.LABEL_MEDIUM, color = color, maxLines = 3)
 
     private fun tonal() = ButtonColors(containerColor = RAISED, labelColor = INK, iconColor = INK, secondaryLabelColor = MUTED)
@@ -172,7 +172,7 @@ class EscribaTileService : TileService() {
     private fun profileColor(hex: String?): LayoutColor =
         ProfilePalette.nearest(hex)?.let { LayoutColor(PROFILE_WATCH[it]) } ?: MUTED
 
-    // --- Acciones ------------------------------------------------------------
+    // --- Actions -------------------------------------------------------------
 
     private fun handleClick(id: String) {
         if (id.isEmpty() || id == ID_MORE) return
@@ -190,7 +190,7 @@ class EscribaTileService : TileService() {
             else -> return
         }
         runCatching { RecorderService.send(this, intent) }
-            .onFailure { AppLog.e(TAG, "El Tile no pudo hablar con el servicio de grabación", it) }
+            .onFailure { AppLog.e(TAG, "The Tile couldn't reach the recording service", it) }
     }
 
     private fun openPicker(): ActionBuilders.Action =
@@ -213,19 +213,19 @@ class EscribaTileService : TileService() {
         const val TAG = "tile"
         const val ORIGIN = "tile"
         const val SLOTS = 3
-        const val ID_STOP = "parar"
-        const val ID_MORE = "mas"
-        const val PREFIX_PROFILE = "perfil:"
+        const val ID_STOP = "stop"
+        const val ID_MORE = "more"
+        const val PREFIX_PROFILE = "profile:"
         const val RESOURCES_VERSION = "3"
         val HM: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
-        // Tema «reloj» del sistema de diseño.
+        // The design system's "watch" theme.
         val INK = LayoutColor(0xFFFFFFFF.toInt())
         val INK_ON_COLOR = LayoutColor(0xFF000000.toInt())
         val MUTED = LayoutColor(0xFFA9B6C1.toInt())
         val RAISED = LayoutColor(0xFF161C21.toInt())
         val MINIUM = LayoutColor(0xFFFF7D61.toInt())
-        /** pino, lapislázuli, ocre, ciruela, pizarra, teja (valores del tema reloj). */
+        /** pine, lapis, ochre, plum, slate, terracotta (watch theme values). */
         val PROFILE_WATCH = intArrayOf(
             0xFF7FCF8E.toInt(), 0xFFA3B8F5.toInt(), 0xFFF0B65C.toInt(),
             0xFFE19AD8.toInt(), 0xFFA9BCCC.toInt(), 0xFFF2A07F.toInt(),

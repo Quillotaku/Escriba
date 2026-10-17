@@ -9,12 +9,12 @@ import dev.escriba.wear.tile.EscribaTileService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
-/** Estado de grabación compartido por el servicio, la UI, el Tile y la complicación. */
+/** Recording state shared by the service, the UI, the Tile and the complication. */
 object RecordingState {
 
     enum class Phase { IDLE, CAPTURING, PAUSED }
 
-    /** Datos en vivo de la sesión, para la pantalla del reloj. */
+    /** Live session data, for the watch screen. */
     data class Live(
         val sessionId: String? = null,
         val origin: String? = null,
@@ -54,7 +54,7 @@ object RecordingState {
         _live.value = Live()
     }
 
-    /** Pide al sistema que vuelva a pintar el Tile y la complicación. */
+    /** Asks the system to redraw the Tile and the complication. */
     fun refreshSurfaces(context: Context) {
         val app = context.applicationContext
         runCatching { TileService.getUpdater(app).requestUpdate(EscribaTileService::class.java) }

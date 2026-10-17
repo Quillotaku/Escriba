@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Nada de Escriba se copia a la nube ni se transfiere a otro dispositivo. -->
+<!-- Nothing from Escriba is copied to the cloud or transferred to another device. -->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="root" path="." />

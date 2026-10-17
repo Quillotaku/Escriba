@@ -5,7 +5,7 @@ import android.media.MediaFormat
 import java.io.File
 import java.nio.ByteBuffer
 
-/** Spike: comprueba que un .ogg generado es válido releyéndolo con el demuxer del sistema. */
+/** Checks that a generated .ogg is valid by reading it back with the system demuxer. */
 object OggInspector {
 
     data class Report(
@@ -20,8 +20,8 @@ object OggInspector {
         val ok: Boolean get() = error == null && hasOggMagic && hasOpusHead && mime == MediaFormat.MIMETYPE_AUDIO_OPUS && packets > 0
 
         override fun toString(): String =
-            "ogg=${if (ok) "VÁLIDO" else "INVÁLIDO"} tamaño=${sizeBytes}B OggS=$hasOggMagic OpusHead=$hasOpusHead " +
-                "mime=$mime paquetes=$packets duración≈${lastPacketUs / 1000} ms" + (error?.let { " error=$it" } ?: "")
+            "ogg=${if (ok) "VALID" else "INVALID"} size=${sizeBytes}B OggS=$hasOggMagic OpusHead=$hasOpusHead " +
+                "mime=$mime packets=$packets duration≈${lastPacketUs / 1000} ms" + (error?.let { " error=$it" } ?: "")
     }
 
     fun inspect(file: File): Report {
@@ -33,7 +33,7 @@ object OggInspector {
         return try {
             extractor.setDataSource(file.path)
             if (extractor.trackCount < 1) {
-                return Report(file.length(), hasMagic, hasOpusHead, null, 0, 0, "sin pistas")
+                return Report(file.length(), hasMagic, hasOpusHead, null, 0, 0, "no tracks")
             }
             val mime = extractor.getTrackFormat(0).getString(MediaFormat.KEY_MIME)
             extractor.selectTrack(0)

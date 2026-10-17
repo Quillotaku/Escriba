@@ -12,30 +12,30 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.io.Closeable
 
-/** Archivo de modelo disponible en la carpeta de modelos. */
+/** A model file available in the models folder. */
 data class ModelEntry(val uri: String, val name: String, val sizeBytes: Long) {
     val kind: String get() = when {
         name.startsWith("ggml-") && name.endsWith(".bin") -> "whisper"
         name.endsWith(".gguf") -> "llm"
         name.startsWith("parakeet") -> "parakeet"
-        name.endsWith(".onnx") -> "voz"
-        else -> "otro"
+        name.endsWith(".onnx") -> "voice"
+        else -> "other"
     }
 }
 
-/** Archivo de modelo abierto: mientras no se cierre, [fd] es válido para el motor nativo. */
+/** An open model file: until it's closed, [fd] is valid for the native engine. */
 class OpenModel(val fd: Int, private val pfd: ParcelFileDescriptor) : Closeable {
     override fun close() = pfd.close()
 }
 
 /**
- * Carpeta de modelos elegida por el usuario (p. ej. Descargas). La app lista lo que hay dentro y
- * abre los modelos directamente desde ahí: no se copian ni se importan uno a uno. Escriba no tiene
- * acceso a Internet, así que los modelos se descargan fuera y se dejan en esa carpeta.
+ * Models folder chosen by the user (e.g. Downloads). The app lists what's inside and opens the
+ * models straight from there: they aren't copied or imported one by one. Escriba has no Internet
+ * access, so the models are downloaded elsewhere and left in that folder.
  */
 class ModelStore(context: Context) {
     private val appContext = context.applicationContext
-    private val prefs = appContext.getSharedPreferences("modelos", Context.MODE_PRIVATE)
+    private val prefs = appContext.getSharedPreferences("models", Context.MODE_PRIVATE)
 
     private val _folder = MutableStateFlow(prefs.getString(KEY_FOLDER, null)?.let(Uri::parse))
     val folder: StateFlow<Uri?> = _folder
@@ -56,7 +56,7 @@ class ModelStore(context: Context) {
 
     fun folderName(): String? = _folder.value?.let { DocumentsContract.getTreeDocumentId(it).substringAfter(':').ifEmpty { "/" } }
 
-    /** Vuelve a leer la carpeta (p. ej. tras descargar un modelo nuevo). */
+    /** Reads the folder again (e.g. after downloading a new model). */
     fun refresh(): List<ModelEntry> {
         val tree = _folder.value ?: return emptyList<ModelEntry>().also { _models.value = it }
         val list = runCatching {
@@ -81,8 +81,8 @@ class ModelStore(context: Context) {
     }
 
     /**
-     * El modelo que corresponde al nombre de un perfil (`whisper: large-v3-turbo-q8_0`): el archivo
-     * `ggml-large-v3-turbo-q8_0.bin`, o el primero cuyo nombre lo contenga.
+     * The model matching a profile's name (`whisper: large-v3-turbo-q8_0`): the file
+     * `ggml-large-v3-turbo-q8_0.bin`, or the first one whose name contains it.
      */
     fun find(name: String): ModelEntry? {
         val models = _models.value.ifEmpty { refresh() }
@@ -93,27 +93,27 @@ class ModelStore(context: Context) {
 
     fun open(entry: ModelEntry): OpenModel {
         val pfd = appContext.contentResolver.openFileDescriptor(Uri.parse(entry.uri), "r")
-            ?: error("No se pudo abrir ${entry.name}")
-        // Un proveedor que solo da tuberías no sirve: el motor necesita poder leer el archivo entero.
+            ?: error("Couldn't open ${entry.name}")
+        // A provider that only gives pipes won't do: the engine needs to read the whole file.
         runCatching { Os.lseek(pfd.fileDescriptor, 0, OsConstants.SEEK_CUR) }.onFailure {
             pfd.close()
-            error("${entry.name} no se puede leer directamente desde esa carpeta")
+            error("${entry.name} can't be read directly from that folder")
         }
         return OpenModel(pfd.fd, pfd)
     }
 
     /**
-     * Ruta local de un modelo, copiándolo a la app la primera vez. sherpa-onnx solo abre modelos
-     * por ruta, y las rutas de Descargas exigen permiso de almacenamiento general (que Escriba no
-     * pide); su almacenamiento privado sí se puede leer por ruta. La copia se hace una vez y se
-     * rehace solo si el original cambia de tamaño.
+     * Local path of a model, copying it into the app the first time. sherpa-onnx only opens models
+     * by path, and Downloads paths require broad storage permission (which Escriba doesn't ask
+     * for); its private storage can be read by path. The copy is made once and only redone if the
+     * original changes size.
      */
     fun localPath(entry: ModelEntry, onProgress: (copiedMb: Long, totalMb: Long) -> Unit = { _, _ -> }): String {
-        val dir = java.io.File(appContext.filesDir, "modelos").apply { mkdirs() }
+        val dir = java.io.File(appContext.filesDir, "models").apply { mkdirs() }
         val target = java.io.File(dir, entry.name)
         if (target.exists() && target.length() == entry.sizeBytes) return target.absolutePath
         val free = dir.usableSpace
-        check(free > entry.sizeBytes + 200L * 1024 * 1024) { "No hay espacio para copiar ${entry.name} (${entry.sizeBytes / 1_048_576} MB)" }
+        check(free > entry.sizeBytes + 200L * 1024 * 1024) { "There's no room to copy ${entry.name} (${entry.sizeBytes / 1_048_576} MB)" }
         val tmp = java.io.File(dir, entry.name + ".part")
         appContext.contentResolver.openInputStream(Uri.parse(entry.uri))?.use { input ->
             tmp.outputStream().use { output ->
@@ -132,19 +132,19 @@ class ModelStore(context: Context) {
                 }
                 output.fd.sync()
             }
-        } ?: error("No se pudo leer ${entry.name}")
-        check(tmp.renameTo(target)) { "No se pudo guardar ${entry.name}" }
+        } ?: error("Couldn't read ${entry.name}")
+        check(tmp.renameTo(target)) { "Couldn't save ${entry.name}" }
         return target.absolutePath
     }
 
-    /** Ruta local del modelo cuyo nombre es exactamente [name] (o error claro si falta). */
+    /** Local path of the model named exactly [name] (or a clear error if it's missing). */
     fun localPathOf(name: String, onProgress: (Long, Long) -> Unit = { _, _ -> }): String {
         val entry = (_models.value.ifEmpty { refresh() }).firstOrNull { it.name == name }
-            ?: error("Falta $name en la carpeta de modelos")
+            ?: error("$name is missing from the models folder")
         return localPath(entry, onProgress)
     }
 
     private companion object {
-        const val KEY_FOLDER = "carpeta"
+        const val KEY_FOLDER = "folder"
     }
 }

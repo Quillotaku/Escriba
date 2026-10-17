@@ -1,6 +1,6 @@
 package dev.escriba.shared.vault
 
-/** Valor de una propiedad del frontmatter. */
+/** Value of a frontmatter property. */
 sealed interface YamlValue {
     data class Text(val value: String) : YamlValue
     data class Bool(val value: Boolean) : YamlValue
@@ -9,17 +9,17 @@ sealed interface YamlValue {
     data object Empty : YamlValue
 }
 
-/** Error de lectura con su línea (1 = primera línea del archivo). */
+/** Parse error with its line (1 = first line of the file). */
 data class YamlError(val line: Int, val message: String) {
-    override fun toString() = "línea $line: $message"
+    override fun toString() = "line $line: $message"
 }
 
 /**
- * Frontmatter de Obsidian: el bloque `---` del principio de una nota.
+ * Obsidian frontmatter: the `---` block at the start of a note.
  *
- * Solo admite lo que genera la interfaz de Propiedades de Obsidian (claves planas, textos,
- * números, booleanos y listas, en línea o en bloque). Los objetos anidados se rechazan con un
- * error claro en lugar de interpretarse a medias.
+ * Only supports what Obsidian's Properties view produces (flat keys, text, numbers, booleans and
+ * lists, inline or block). Nested objects are rejected with a clear error instead of being half
+ * understood.
  */
 data class Frontmatter(val properties: LinkedHashMap<String, YamlValue>, val body: String) {
 
@@ -31,13 +31,13 @@ data class Frontmatter(val properties: LinkedHashMap<String, YamlValue>, val bod
     }
 
     companion object {
-        /** Separa el frontmatter del cuerpo. Una nota sin frontmatter devuelve propiedades vacías. */
+        /** Splits the frontmatter from the body. A note without frontmatter returns no properties. */
         fun parse(note: String): Pair<Frontmatter, List<YamlError>> {
             val text = note.removePrefix("﻿").replace("\r\n", "\n")
             val lines = text.split('\n')
             if (lines.firstOrNull()?.trimEnd() != "---") return Frontmatter(LinkedHashMap(), text) to emptyList()
             val end = (1 until lines.size).firstOrNull { lines[it].trimEnd() == "---" }
-                ?: return Frontmatter(LinkedHashMap(), text) to listOf(YamlError(1, "Falta el «---» que cierra el frontmatter"))
+                ?: return Frontmatter(LinkedHashMap(), text) to listOf(YamlError(1, "Missing the \"---\" that closes the frontmatter"))
             val (props, errors) = parseYaml(lines.subList(1, end), firstLine = 2)
             val body = lines.drop(end + 1).joinToString("\n").removePrefix("\n")
             return Frontmatter(props, body) to errors
@@ -64,26 +64,26 @@ data class Frontmatter(val properties: LinkedHashMap<String, YamlValue>, val bod
                 val trimmed = line.trimStart()
                 if (trimmed.startsWith("- ") || trimmed == "-") {
                     if (listKey == null) {
-                        errors += YamlError(lineNo, "Elemento de lista sin propiedad")
+                        errors += YamlError(lineNo, "List item without a property")
                     } else {
                         listItems!!.add(unquote(trimmed.removePrefix("-").trim()))
                     }
                     return@forEachIndexed
                 }
                 if (line.first().isWhitespace()) {
-                    errors += YamlError(lineNo, "Las propiedades anidadas no están admitidas")
+                    errors += YamlError(lineNo, "Nested properties aren't supported")
                     return@forEachIndexed
                 }
 
                 closeList()
                 val colon = findKeyColon(line)
                 if (colon <= 0) {
-                    errors += YamlError(lineNo, "Se esperaba «propiedad: valor»")
+                    errors += YamlError(lineNo, "Expected \"property: value\"")
                     return@forEachIndexed
                 }
                 val key = unquote(line.substring(0, colon).trim())
                 val value = line.substring(colon + 1).trim()
-                if (key in props) errors += YamlError(lineNo, "Propiedad «$key» repetida")
+                if (key in props) errors += YamlError(lineNo, "Property \"$key\" is repeated")
                 when {
                     value.isEmpty() -> {
                         listKey = key
@@ -91,15 +91,15 @@ data class Frontmatter(val properties: LinkedHashMap<String, YamlValue>, val bod
                     }
                     value.startsWith("[") -> {
                         if (!value.endsWith("]")) {
-                            errors += YamlError(lineNo, "Lista sin cerrar en «$key»")
+                            errors += YamlError(lineNo, "Unclosed list in \"$key\"")
                         } else {
                             val inner = value.substring(1, value.length - 1)
                             props[key] = YamlValue.Items(splitInline(inner).map(::unquote).filter { it.isNotEmpty() })
                         }
                     }
-                    value.startsWith("{") -> errors += YamlError(lineNo, "Los objetos no están admitidos en «$key»")
+                    value.startsWith("{") -> errors += YamlError(lineNo, "Objects aren't supported in \"$key\"")
                     value == "|" || value == ">" || value.startsWith("|") || value.startsWith(">") ->
-                        errors += YamlError(lineNo, "Los textos de varias líneas van en el cuerpo de la nota, no en «$key»")
+                        errors += YamlError(lineNo, "Multi-line text goes in the body of the note, not in \"$key\"")
                     else -> props[key] = scalar(value)
                 }
             }
@@ -107,7 +107,7 @@ data class Frontmatter(val properties: LinkedHashMap<String, YamlValue>, val bod
             return props to errors
         }
 
-        /** Escribe propiedades en el formato que Obsidian genera y entiende. */
+        /** Writes properties in the format Obsidian produces and understands. */
         fun emit(properties: Map<String, YamlValue>): String = buildString {
             for ((key, value) in properties) {
                 append(key).append(':')
@@ -128,7 +128,7 @@ data class Frontmatter(val properties: LinkedHashMap<String, YamlValue>, val bod
         private fun scalar(value: String): YamlValue {
             if (value.startsWith('"') || value.startsWith('\'')) return YamlValue.Text(unquote(value))
             return when (value.lowercase()) {
-                "true", "sí", "si", "yes" -> YamlValue.Bool(true)
+                "true", "yes" -> YamlValue.Bool(true)
                 "false", "no" -> YamlValue.Bool(false)
                 "null", "~" -> YamlValue.Empty
                 else -> value.toDoubleOrNull()?.takeIf { NUMBER.matches(value) }?.let(YamlValue::Number) ?: YamlValue.Text(value)
@@ -139,7 +139,7 @@ data class Frontmatter(val properties: LinkedHashMap<String, YamlValue>, val bod
 
         private fun formatNumber(v: Double): String = if (v == Math.floor(v) && !v.isInfinite()) v.toLong().toString() else v.toString()
 
-        /** El «:» que separa clave y valor (no uno dentro de comillas ni el de una hora como 07:30). */
+        /** The ":" that separates key and value (not one inside quotes or in a time like 07:30). */
         private fun findKeyColon(line: String): Int {
             var quote: Char? = null
             for (i in line.indices) {
@@ -207,7 +207,7 @@ data class Frontmatter(val properties: LinkedHashMap<String, YamlValue>, val bod
             return t
         }
 
-        /** Los enlaces [[…]], las horas y los textos con caracteres especiales van entre comillas. */
+        /** [[…]] links, times and text with special characters are quoted. */
         private fun quoteIfNeeded(s: String): String {
             val needs = s.isEmpty() || s.startsWith('[') || s.startsWith('{') || s.startsWith('#') || s.startsWith('-') ||
                 s.contains(": ") || s.contains(" #") || s.endsWith(':') || s.first().isWhitespace() || s.last().isWhitespace() ||

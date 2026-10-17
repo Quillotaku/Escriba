@@ -25,6 +25,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import dev.escriba.mobile.R
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -47,14 +50,18 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-val ES: Locale = Locale.forLanguageTag("es-ES")
+/**
+ * Locale for dates, matching the app's texts (English only for now). If the app becomes
+ * multilingual, this should follow the resources' locale.
+ */
+val APP_LOCALE: Locale = Locale.ENGLISH
 val HM: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
-private val WEEKDAY = DateTimeFormatter.ofPattern("EEEE d", ES)
-private val MONTH = DateTimeFormatter.ofPattern("MMMM 'de' yyyy", ES)
+private val WEEKDAY = DateTimeFormatter.ofPattern("EEEE d", APP_LOCALE)
+private val MONTH = DateTimeFormatter.ofPattern("MMMM yyyy", APP_LOCALE)
 
 fun Long.local(zone: ZoneId = ZoneId.systemDefault()) = Instant.ofEpochMilli(this).atZone(zone)
 
-/** Conversaciones desde [fromMs], recalculadas cuando cambia cualquier dato del que dependen. */
+/** Conversations since [fromMs], recomputed whenever any data they depend on changes. */
 @Composable
 fun rememberConversations(app: EscribaApp, fromMs: Long): List<ConversationItem> {
     val dao = app.db.sessions()
@@ -76,12 +83,12 @@ fun rememberConversations(app: EscribaApp, fromMs: Long): List<ConversationItem>
 
 @Composable
 fun ConversationState.chip() = when (this) {
-    ConversationState.RECORDING -> StatusChip("Grabando", Tone.RECORDING)
-    ConversationState.PROCESSING -> StatusChip("Procesando", Tone.BUSY)
-    ConversationState.QUEUED -> StatusChip("En cola", Tone.WAIT)
-    ConversationState.WRITTEN -> StatusChip("Escrita", Tone.DONE)
-    ConversationState.FAILED -> StatusChip("Error", Tone.ERROR)
-    ConversationState.AUDIO_GONE -> StatusChip("Sin audio", Tone.WAIT)
+    ConversationState.RECORDING -> StatusChip(stringResource(R.string.state_recording), Tone.RECORDING)
+    ConversationState.PROCESSING -> StatusChip(stringResource(R.string.state_processing), Tone.BUSY)
+    ConversationState.QUEUED -> StatusChip(stringResource(R.string.state_queued), Tone.WAIT)
+    ConversationState.WRITTEN -> StatusChip(stringResource(R.string.state_written), Tone.DONE)
+    ConversationState.FAILED -> StatusChip(stringResource(R.string.state_failed), Tone.ERROR)
+    ConversationState.AUDIO_GONE -> StatusChip(stringResource(R.string.state_audio_gone), Tone.WAIT)
 }
 
 @Composable
@@ -107,16 +114,16 @@ fun TodayScreen(app: EscribaApp, padding: PaddingValues, openSession: (String, I
     ) {
         item {
             Column {
-                Text(now.local(zone).format(WEEKDAY).replaceFirstChar { it.titlecase(ES) }, style = MaterialTheme.typography.displaySmall, color = c.ink)
+                Text(now.local(zone).format(WEEKDAY).replaceFirstChar { it.titlecase(APP_LOCALE) }, style = MaterialTheme.typography.displaySmall, color = c.ink)
                 Text(now.local(zone).format(MONTH), style = MaterialTheme.typography.bodyLarge, color = c.inkMuted)
             }
         }
         item { WatchCard(app, openWatch) }
         if (processingNow != null || overview.queued > 0 || overview.failed > 0) item { ProcessingCard(overview) }
 
-        item { Overline("Hoy", Modifier.padding(top = Space.s2)) }
+        item { Overline(stringResource(R.string.tab_today), Modifier.padding(top = Space.s2)) }
         if (overview.today.isEmpty()) {
-            item { Text("Aún no hay conversaciones hoy. Lo que grabe el reloj aparecerá aquí.", style = MaterialTheme.typography.bodyLarge, color = c.inkMuted) }
+            item { Text(stringResource(R.string.today_empty), style = MaterialTheme.typography.bodyLarge, color = c.inkMuted) }
         } else {
             item {
                 EsCard {
@@ -130,7 +137,7 @@ fun TodayScreen(app: EscribaApp, padding: PaddingValues, openSession: (String, I
 
         item {
             TextButton(onClick = openPanel, modifier = Modifier.padding(top = Space.s1)) {
-                Text("Ver el panel: tareas, semana y modelos")
+                Text(stringResource(R.string.today_open_dashboard))
             }
         }
     }
@@ -143,24 +150,25 @@ private fun WatchCard(app: EscribaApp, openWatch: () -> Unit) {
     val c = Escriba.colors
     EsCard(onClick = openWatch) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(peer?.name ?: "Reloj", style = MaterialTheme.typography.titleSmall, color = c.ink, modifier = Modifier.weight(1f))
+            Text(peer?.name ?: stringResource(R.string.watch), style = MaterialTheme.typography.titleSmall, color = c.ink, modifier = Modifier.weight(1f))
             val st = status
             when {
-                peer == null -> StatusChip("Sin emparejar", Tone.WAIT)
-                st == null -> StatusChip("Sin noticias", Tone.WAIT)
-                st.phase == "CAPTURING" -> StatusChip("Grabando", Tone.RECORDING)
-                st.phase == "PAUSED" -> StatusChip("En pausa", Tone.WAIT)
-                else -> StatusChip("Parado", Tone.WAIT)
+                peer == null -> StatusChip(stringResource(R.string.watch_not_paired), Tone.WAIT)
+                st == null -> StatusChip(stringResource(R.string.watch_no_news), Tone.WAIT)
+                st.phase == "CAPTURING" -> StatusChip(stringResource(R.string.state_recording), Tone.RECORDING)
+                st.phase == "PAUSED" -> StatusChip(stringResource(R.string.watch_paused), Tone.WAIT)
+                else -> StatusChip(stringResource(R.string.watch_stopped), Tone.WAIT)
             }
         }
         val st = status
         if (peer == null) {
-            Text("Empareja el reloj para que empiece a enviar lo que graba.", style = MaterialTheme.typography.bodyMedium, color = c.inkMuted)
+            Text(stringResource(R.string.watch_pair_hint), style = MaterialTheme.typography.bodyMedium, color = c.inkMuted)
         } else if (st != null) {
             val parts = listOfNotNull(
-                st.batteryPct?.let { "Batería ${it.toInt()} %" + if (st.charging) ", cargando" else "" },
-                if (st.pendingFragments > 0) "${st.pendingFragments} fragmentos por enviar" else "Todo enviado",
-                "aviso de las ${st.atMs.local().format(HM)}",
+                st.batteryPct?.let { stringResource(if (st.charging) R.string.watch_battery_charging else R.string.watch_battery, it.toInt()) },
+                if (st.pendingFragments > 0) pluralStringResource(R.plurals.watch_pending, st.pendingFragments, st.pendingFragments)
+                else stringResource(R.string.watch_all_sent),
+                stringResource(R.string.watch_last_seen, st.atMs.local().format(HM)),
             )
             Text(parts.joinToString(" · "), style = MaterialTheme.typography.bodyMedium, color = c.inkMuted)
         }
@@ -176,10 +184,10 @@ private fun ProcessingCard(overview: Overview) {
     EsCard {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
             when {
-                now != null -> StatusChip("Procesando", Tone.BUSY)
-                overview.queued > 0 -> StatusChip("En cola", Tone.WAIT)
+                now != null -> StatusChip(stringResource(R.string.state_processing), Tone.BUSY)
+                overview.queued > 0 -> StatusChip(stringResource(R.string.state_queued), Tone.WAIT)
             }
-            if (overview.failed > 0) StatusChip(if (overview.failed == 1) "1 con error" else "${overview.failed} con error", Tone.ERROR)
+            if (overview.failed > 0) StatusChip(pluralStringResource(R.plurals.failed_count, overview.failed, overview.failed), Tone.ERROR)
         }
         if (now != null) {
             Text(now.step, style = MaterialTheme.typography.bodyLarge, color = c.ink)
@@ -188,14 +196,14 @@ private fun ProcessingCard(overview: Overview) {
         val waiting = overview.queued - if (now != null) 1 else 0
         if (waiting > 0) {
             Text(
-                "$waiting ${if (waiting == 1) "conversación espera" else "conversaciones esperan"}. Las sesiones largas se procesan con el móvil cargando.",
+                pluralStringResource(R.plurals.conversations_waiting, waiting, waiting),
                 style = MaterialTheme.typography.bodyMedium, color = c.inkMuted,
             )
         }
     }
 }
 
-/** Fila compacta de una conversación: hora, título, perfil y estado. */
+/** Compact row of a conversation: time, title, profile and state. */
 @Composable
 fun ConversationRow(conv: ConversationItem, onClick: () -> Unit) {
     val c = Escriba.colors
@@ -205,7 +213,7 @@ fun ConversationRow(conv: ConversationItem, onClick: () -> Unit) {
     ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
-                conv.title ?: "Conversación de las ${conv.startMs.local().format(HM)}",
+                conv.title ?: stringResource(R.string.conversation_at, conv.startMs.local().format(HM)),
                 style = MaterialTheme.typography.titleSmall, color = c.ink, maxLines = 2, overflow = TextOverflow.Ellipsis,
             )
             Row(verticalAlignment = Alignment.CenterVertically) {

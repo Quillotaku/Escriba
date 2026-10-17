@@ -1,11 +1,10 @@
 package dev.escriba.shared.recording
 
 /**
- * Cuándo envía el reloj sus fragmentos al móvil.
+ * When the watch sends its fragments to the phone.
  *
- * Encender la radio para cada fragmento gasta batería, así que se envía por lotes. Pero
- * tampoco conviene que el audio se acumule en el reloj: si se pierde o se rompe, se pierde
- * lo que no se haya enviado.
+ * Waking the radio for every fragment costs battery, so fragments go in batches. But audio
+ * shouldn't pile up on the watch either: if the watch is lost or breaks, whatever wasn't sent is lost.
  */
 object UploadPolicy {
     const val BATCH_FRAGMENTS = 5
@@ -20,7 +19,7 @@ object UploadPolicy {
     ): Boolean = when {
         pendingFragments == 0 && endedSessions == 0 -> false
         manual || charging -> true
-        // Al terminar una sesión se envía enseguida: es cuando el usuario espera ver su nota.
+        // A session that just ended goes right away: that's when the user expects to see the note.
         endedSessions > 0 -> true
         pendingFragments >= BATCH_FRAGMENTS -> true
         else -> oldestPendingAgeMs >= MAX_WAIT_MS

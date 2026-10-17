@@ -47,7 +47,7 @@ import dev.escriba.mobile.ui.theme.Space
 
 enum class Tone { DONE, WAIT, BUSY, RECORDING, ERROR }
 
-/** Estado en una o dos palabras con icono: nunca solo color. */
+/** State in one or two words with an icon: never colour alone. */
 @Composable
 fun StatusChip(text: String, tone: Tone, modifier: Modifier = Modifier, icon: ImageVector? = null) {
     val c = Escriba.colors
@@ -78,7 +78,7 @@ fun StatusChip(text: String, tone: Tone, modifier: Modifier = Modifier, icon: Im
 
 // --- ProfileChip -------------------------------------------------------------
 
-/** El color de perfil más cercano de los seis del sistema a un color de la bóveda (`#2E7D32`). */
+/** The closest of the system's six profile colours to a vault colour (`#2E7D32`). */
 fun EscribaColors.profileColor(hex: String?): Color =
     dev.escriba.shared.vault.ProfilePalette.nearest(hex)?.let { profiles[it] } ?: inkMuted
 
@@ -87,7 +87,7 @@ fun ProfileDot(color: Color, modifier: Modifier = Modifier) {
     Box(modifier.size(8.dp).clip(CircleShape).background(color))
 }
 
-/** Perfil: punto de su color y nombre en tinta. Seleccionado, borde y fondo lapislázuli. */
+/** Profile: a dot in its colour and the name in ink. Selected: lapis border and background. */
 @Composable
 fun ProfileChip(name: String, color: Color, selected: Boolean = false, onClick: (() -> Unit)? = null) {
     val c = Escriba.colors
@@ -107,9 +107,9 @@ fun ProfileChip(name: String, color: Color, selected: Boolean = false, onClick: 
     }
 }
 
-// --- Superficies -------------------------------------------------------------
+// --- Surfaces ----------------------------------------------------------------
 
-/** Tarjeta del sistema: papel elevado con filete, sin sombra. */
+/** The system's card: raised paper with a rule, no shadow. */
 @Composable
 fun EsCard(modifier: Modifier = Modifier, onClick: (() -> Unit)? = null, content: @Composable ColumnScope.() -> Unit) {
     val c = Escriba.colors
@@ -127,13 +127,13 @@ fun EsCard(modifier: Modifier = Modifier, onClick: (() -> Unit)? = null, content
     )
 }
 
-/** Encabezado de sección del panel, en mayúsculas espaciadas. */
+/** Dashboard section header, in spaced capitals. */
 @Composable
 fun Overline(text: String, modifier: Modifier = Modifier) {
     Text(text.uppercase(), style = Escriba.type.overline, color = Escriba.colors.inkMuted, modifier = modifier.semantics { contentDescription = text })
 }
 
-/** Línea de metadatos: textos secundarios separados por espacio, con las horas en mono. */
+/** Metadata line: secondary texts separated by space, with times in mono. */
 @Composable
 fun MetaRow(vararg parts: String, time: String? = null) {
     Row(horizontalArrangement = Arrangement.spacedBy(Space.s3), verticalAlignment = Alignment.CenterVertically) {
@@ -142,7 +142,7 @@ fun MetaRow(vararg parts: String, time: String? = null) {
     }
 }
 
-/** Estado vacío: qué aparecerá aquí y cómo conseguirlo. */
+/** Empty state: what will show up here and how to get it. */
 @Composable
 fun EmptyState(title: String, body: String, modifier: Modifier = Modifier, action: (@Composable () -> Unit)? = null) {
     Column(modifier.fillMaxWidth().padding(vertical = Space.s6), verticalArrangement = Arrangement.spacedBy(Space.s2)) {
@@ -155,7 +155,7 @@ fun EmptyState(title: String, body: String, modifier: Modifier = Modifier, actio
     }
 }
 
-/** Fila de ajustes: icono, título, descripción y flecha. */
+/** Settings row: icon, title, description and arrow. */
 @Composable
 fun SettingRow(icon: ImageVector, title: String, subtitle: String?, onClick: () -> Unit, trailing: (@Composable RowScope.() -> Unit)? = null) {
     val c = Escriba.colors
@@ -178,7 +178,7 @@ fun SettingRow(icon: ImageVector, title: String, subtitle: String?, onClick: () 
 @Immutable
 data class MetricPart(val label: String, val color: Color, val value: Long, val valueText: String)
 
-/** Cifra del panel con su desglose en barra apilada y leyenda. */
+/** Dashboard figure with its breakdown as a stacked bar and legend. */
 @Composable
 fun MetricTile(title: String, value: String, parts: List<MetricPart>, modifier: Modifier = Modifier) {
     val c = Escriba.colors
@@ -212,7 +212,7 @@ fun MetricTile(title: String, value: String, parts: List<MetricPart>, modifier: 
 @Immutable
 data class TranscriptParagraph(val time: String, val speaker: String?, val known: Boolean, val text: String)
 
-/** Transcripción como en la nota: párrafos con su hora y quien habla. */
+/** Transcript as in the note: paragraphs with their time and who speaks. */
 @Composable
 fun TranscriptBlock(paragraphs: List<TranscriptParagraph>, modifier: Modifier = Modifier) {
     val c = Escriba.colors

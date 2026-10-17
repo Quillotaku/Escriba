@@ -7,10 +7,10 @@ import android.os.BatteryManager
 import java.io.File
 
 /**
- * Registro de batería para medir el consumo real de la grabación (fase 2: medición base).
+ * Battery log to measure the real cost of recording.
  *
- * Se escribe en `files/battery.csv`:
- * `epochMs,nivel%,cargando,tempC,estado,vozPct`. Para copiarlo al PC:
+ * It's written to `files/battery.csv`:
+ * `epochMs,level%,charging,tempC,state,speechPct`. To copy it to the PC (debug builds):
  * `adb exec-out run-as dev.escriba cat files/battery.csv > battery.csv`.
  */
 object BatteryLog {
@@ -30,7 +30,7 @@ object BatteryLog {
     fun append(context: Context, state: String, speechPct: Int) {
         val r = read(context) ?: return
         val file = File(context.filesDir, "battery.csv")
-        if (!file.exists()) file.writeText("epochMs,nivel,cargando,tempC,estado,vozPct\n")
+        if (!file.exists()) file.writeText("epochMs,level,charging,tempC,state,speechPct\n")
         file.appendText("${System.currentTimeMillis()},${r.level},${r.charging},${r.tempC},$state,$speechPct\n")
     }
 }

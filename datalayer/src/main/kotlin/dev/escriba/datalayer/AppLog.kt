@@ -9,8 +9,11 @@ import java.io.File
 import java.util.concurrent.Executors
 
 /**
- * Registro de diagnóstico de la app: en memoria para la UI y en un archivo
- * privado para poder recuperarlo con `adb shell run-as dev.escriba cat files/escriba-log.txt`.
+ * The app's diagnostic log: in memory for the UI and in a private file, so it can be read with
+ * `adb shell run-as dev.escriba cat files/escriba-log.txt` on debug builds.
+ *
+ * Log messages are for diagnosing problems, not part of the UI, so they're plain English text
+ * rather than string resources.
  */
 object AppLog {
     val events = EventLog()
@@ -40,25 +43,25 @@ object AppLog {
         logLastExit(context)
     }
 
-    /** Cuenta por qué murió el proceso anterior: clave para detectar los cierres de HyperOS/MagicOS. */
+    /** Why the previous process died: key to spotting HyperOS/MagicOS kills. */
     private fun logLastExit(context: Context) {
         val am = context.getSystemService(ActivityManager::class.java) ?: return
         val last = runCatching { am.getHistoricalProcessExitReasons(null, 0, 1).firstOrNull() }.getOrNull() ?: return
         val reason = when (last.reason) {
             ApplicationExitInfo.REASON_ANR -> "ANR"
             ApplicationExitInfo.REASON_CRASH -> "crash"
-            ApplicationExitInfo.REASON_CRASH_NATIVE -> "crash nativo"
-            ApplicationExitInfo.REASON_EXIT_SELF -> "salida propia"
-            ApplicationExitInfo.REASON_LOW_MEMORY -> "poca memoria"
-            ApplicationExitInfo.REASON_SIGNALED -> "señal ${last.status}"
-            ApplicationExitInfo.REASON_USER_REQUESTED -> "cerrada por el usuario"
-            ApplicationExitInfo.REASON_USER_STOPPED -> "detenida por el usuario"
-            ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE -> "uso excesivo de recursos"
-            ApplicationExitInfo.REASON_FREEZER -> "congelada"
-            ApplicationExitInfo.REASON_OTHER -> "otro (posible gestor de batería del fabricante)"
-            else -> "código ${last.reason}"
+            ApplicationExitInfo.REASON_CRASH_NATIVE -> "native crash"
+            ApplicationExitInfo.REASON_EXIT_SELF -> "exited itself"
+            ApplicationExitInfo.REASON_LOW_MEMORY -> "low memory"
+            ApplicationExitInfo.REASON_SIGNALED -> "signal ${last.status}"
+            ApplicationExitInfo.REASON_USER_REQUESTED -> "closed by the user"
+            ApplicationExitInfo.REASON_USER_STOPPED -> "stopped by the user"
+            ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE -> "excessive resource usage"
+            ApplicationExitInfo.REASON_FREEZER -> "frozen"
+            ApplicationExitInfo.REASON_OTHER -> "other (possibly the manufacturer's battery manager)"
+            else -> "code ${last.reason}"
         }
-        i("sistema", "Proceso anterior terminó: $reason — ${last.description ?: "sin descripción"}")
+        i("system", "Previous process ended: $reason — ${last.description ?: "no description"}")
     }
 
     fun i(tag: String, message: String) = events.add(tag, message)

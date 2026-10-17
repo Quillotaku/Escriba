@@ -17,11 +17,11 @@ import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
 
 /**
- * Retención del audio, una vez al día:
- *  - en el móvil, el audio de las sesiones ya escritas en la bóveda se borra a los N días
- *    (`retencion_audio_movil`);
- *  - en la bóveda, el `.ogg` de cada nota se borra a los N días de su perfil (`retencion_audio`),
- *    y la nota se actualiza para que no quede un enlace roto.
+ * Audio retention, once a day:
+ *  - on the phone, the audio of sessions already written to the vault is deleted after N days
+ *    (`phone_audio_retention`);
+ *  - in the vault, each note's `.ogg` is deleted after its profile's N days (`audio_retention`),
+ *    and the note is updated so no broken link is left.
  */
 class RetentionWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
 
@@ -37,7 +37,7 @@ class RetentionWorker(context: Context, params: WorkerParameters) : CoroutineWor
             if (now - processed < phoneDays * DAY_MS) continue
             File(app.filesDir, "inbox/${session.id}").deleteRecursively()
             dao.upsertSession(session.copy(audioDeletedAtMs = now))
-            AppLog.i("retencion", "Audio de la sesión ${session.id.take(8)} borrado del móvil (${phoneDays} días)")
+            AppLog.i(TAG, "Audio of session ${session.id.take(8)} deleted from the phone ($phoneDays days)")
         }
 
         if (set != null && app.vault.isConfigured) {
@@ -50,31 +50,32 @@ class RetentionWorker(context: Context, params: WorkerParameters) : CoroutineWor
                     app.vault.delete(audio)
                     app.vault.readText(note.path)?.let { text ->
                         val updated = text
-                            .replace("![[$audio]]", "_Audio borrado el $today (retención de $days días)._")
-                            .replace("\"[[$audio]]\"", "\"borrado $today\"")
+                            .replace("![[$audio]]", "_Audio deleted on $today ($days-day retention)._")
+                            .replace("\"[[$audio]]\"", "\"deleted $today\"")
                         if (updated != text) app.vault.writeText(note.path, updated)
                     }
                     dao.upsertNote(note.copy(audioDeletedAtMs = now))
-                    AppLog.i("retencion", "Audio borrado de la bóveda: $audio ($days días)")
-                }.onFailure { AppLog.e("retencion", "No se pudo borrar $audio", it) }
+                    AppLog.i(TAG, "Audio deleted from the vault: $audio ($days days)")
+                }.onFailure { AppLog.e(TAG, "Couldn't delete $audio", it) }
             }
         }
         return Result.success()
     }
 
     companion object {
+        private const val TAG = "retention"
         private const val DAY_MS = 86_400_000L
 
         fun schedule(context: Context) {
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-                "retencion",
+                "retention",
                 ExistingPeriodicWorkPolicy.KEEP,
                 PeriodicWorkRequestBuilder<RetentionWorker>(1, TimeUnit.DAYS).build(),
             )
         }
 
         fun runNow(context: Context) {
-            WorkManager.getInstance(context).enqueueUniqueWork("retencion-ahora", ExistingWorkPolicy.REPLACE, OneTimeWorkRequestBuilder<RetentionWorker>().build())
+            WorkManager.getInstance(context).enqueueUniqueWork("retention-now", ExistingWorkPolicy.REPLACE, OneTimeWorkRequestBuilder<RetentionWorker>().build())
         }
     }
 }

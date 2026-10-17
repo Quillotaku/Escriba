@@ -20,7 +20,7 @@ android {
     }
 
     buildTypes {
-        // Sin optimizaciones la inferencia es inservible: también en debug se compila en Release.
+        // Without optimizations inference is unusable: it's compiled as Release in debug builds too.
         debug {
             externalNativeBuild { cmake { arguments += "-DCMAKE_BUILD_TYPE=Release" } }
         }

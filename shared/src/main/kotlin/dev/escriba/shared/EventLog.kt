@@ -8,9 +8,8 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 /**
- * Registro en memoria de lo que ocurre en la app, visible en pantalla.
- * Una app instalada por ADB no puede leer logcat, así que los diagnósticos
- * tienen que vivir dentro de la propia app.
+ * In-memory log of what happens in the app, shown on screen.
+ * An app installed over ADB can't read logcat, so diagnostics have to live inside the app.
  */
 class EventLog(private val capacity: Int = 300, private val clock: () -> Long = System::currentTimeMillis) {
 
@@ -21,7 +20,7 @@ class EventLog(private val capacity: Int = 300, private val clock: () -> Long = 
     private val _entries = MutableStateFlow<List<Entry>>(emptyList())
     val entries: StateFlow<List<Entry>> = _entries
 
-    /** Se invoca con cada entrada nueva; las apps lo usan para persistirla en disco. */
+    /** Called with every new entry; the apps use it to persist the log to disk. */
     var sink: ((Entry) -> Unit)? = null
 
     fun add(tag: String, message: String) {

@@ -9,7 +9,7 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        // Debe coincidir con el del móvil: la Data Layer solo comunica apps con el mismo id y firma.
+        // Must match the phone's: the Data Layer only connects apps with the same id and signature.
         applicationId = "dev.escriba"
         minSdk = 34
         targetSdk = 36
@@ -19,11 +19,11 @@ android {
 
     buildTypes {
         release {
-            // Compose sin optimizar va a tirones en el reloj: en release, R8 lo compila de verdad.
+            // Unoptimized Compose stutters on the watch: in release, R8 compiles it properly.
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Misma firma que el móvil (la de depuración): la Data Layer solo une apps con la misma.
+            // Same signature as the phone (the debug one): the Data Layer only links apps that share it.
             signingConfig = signingConfigs.getByName("debug")
         }
     }
@@ -43,7 +43,7 @@ dependencies {
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
-    // Los servicios de Google traen un fragment antiguo que rompe los permisos con ActivityResult.
+    // Google's services bring an old fragment that breaks permissions with ActivityResult.
     implementation(libs.androidx.fragment)
     implementation(libs.androidx.lifecycle.runtime.compose)
 

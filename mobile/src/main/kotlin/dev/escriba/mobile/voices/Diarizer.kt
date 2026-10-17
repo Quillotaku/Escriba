@@ -17,17 +17,17 @@ import dev.escriba.shared.voices.VoiceMath
 import kotlinx.coroutines.sync.withLock
 
 /**
- * Quién habla y cuándo (sherpa-onnx): segmentación de pyannote + huellas de 3D-Speaker +
- * agrupación. Para cada hablante devuelve además una huella media, que es lo que se compara con
- * las voces registradas («Yo», «Ana López»…).
+ * Who speaks when (sherpa-onnx): pyannote segmentation + 3D-Speaker embeddings + clustering.
+ * For each speaker it also returns an average voiceprint, which is what gets compared with the
+ * enrolled voices ("Me", "Ana López"…).
  */
 class Diarizer(private val models: ModelStore, private val slot: ModelSlot) {
 
     data class Result(
         val turns: List<SpeakerTurn>,
-        /** Huella media de cada hablante detectado. */
+        /** Average voiceprint of each detected speaker. */
         val embeddings: Map<Int, FloatArray>,
-        /** Segundos de voz de cada hablante. */
+        /** Speech time of each speaker. */
         val speechMs: Map<Int, Long>,
         val elapsedMs: Long,
     )
@@ -45,7 +45,7 @@ class Diarizer(private val models: ModelStore, private val slot: ModelSlot) {
                     numThreads = threads,
                 ),
                 embedding = SpeakerEmbeddingExtractorConfig(model = embedding, numThreads = threads),
-                // Número de hablantes desconocido: se agrupa por similitud (más bajo = más hablantes).
+                // Unknown number of speakers: cluster by similarity (lower = more speakers).
                 clustering = FastClusteringConfig(numClusters = -1, threshold = CLUSTER_THRESHOLD),
                 minDurationOn = 0.3f,
                 minDurationOff = 0.5f,
@@ -62,7 +62,7 @@ class Diarizer(private val models: ModelStore, private val slot: ModelSlot) {
         }
         val speechMs = segments.groupBy { it.speaker }.mapValues { (_, list) -> list.sumOf { ((it.end - it.start) * 1000).toLong() } }
 
-        // Huella de cada hablante a partir de hasta 30 s de su voz.
+        // Each speaker's voiceprint from up to 30 s of their speech.
         val extractor = SpeakerEmbeddingExtractor(config = SpeakerEmbeddingExtractorConfig(model = embedding, numThreads = threads))
         val embeddings = HashMap<Int, FloatArray>()
         try {
@@ -72,7 +72,7 @@ class Diarizer(private val models: ModelStore, private val slot: ModelSlot) {
                 for (s in list.sortedByDescending { it.end - it.start }) {
                     val from = (s.start * 16_000).toInt().coerceIn(0, audio.pcm.size)
                     val to = (s.end * 16_000).toInt().coerceIn(from, audio.pcm.size)
-                    if (to - from < 16_000 / 2) continue // menos de 0,5 s no dice mucho de una voz
+                    if (to - from < 16_000 / 2) continue // less than 0.5 s says little about a voice
                     samples += audio.pcm.copyOfRange(from, to)
                     total += to - from
                     if (total >= 16_000 * 30) break
@@ -93,13 +93,13 @@ class Diarizer(private val models: ModelStore, private val slot: ModelSlot) {
 
         val clean = VoiceMath.merge(turns, embeddings, speechMs)
         val elapsed = System.currentTimeMillis() - start
-        AppLog.i(TAG, "Diarización: ${clean.speechMs.size} hablantes (${speechMs.size} antes de unir) en " +
-            "${audio.durationMs / 1000} s de voz, ${elapsed / 1000} s de cálculo")
+        AppLog.i(TAG, "Diarization: ${clean.speechMs.size} speakers (${speechMs.size} before merging) in " +
+            "${audio.durationMs / 1000} s of speech, ${elapsed / 1000} s of compute")
         Result(clean.turns, clean.embeddings, clean.speechMs, elapsed)
     }
 
     companion object {
-        private const val TAG = "voces"
+        private const val TAG = "voices"
         const val SEGMENTATION_MODEL = "pyannote-segmentation-3-0.onnx"
         const val EMBEDDING_MODEL = "3dspeaker_speech_eres2net_sv_en_voxceleb_16k.onnx"
         private const val CLUSTER_THRESHOLD = 0.8f

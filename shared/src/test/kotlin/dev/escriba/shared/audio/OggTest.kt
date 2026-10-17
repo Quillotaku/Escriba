@@ -10,18 +10,18 @@ class OggTest {
 
     private fun hex(s: String) = ByteArray(s.length / 2) { s.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
 
-    /** Páginas de cabecera escritas por el MediaMuxer de Android (sin audio): referencia del CRC. */
+    /** Header pages written by Android's MediaMuxer (no audio): the CRC reference. */
     private val androidHeadPage =
         hex("4f676753000200000000000000005408201200000000dceb277d01134f7075734865616401016800803e0000000000")
     private val androidTagsPage =
         hex("4f676753000000000000000000005408201201000000c3fce72801174f70757354616773070000006c69626f70757300000000")
 
-    /** Paquete Opus sintético: TOC con config 27 (CELT, 20 ms) y código 0 (una trama). */
+    /** Synthetic Opus packet: TOC with config 27 (CELT, 20 ms) and code 0 (one frame). */
     private fun packet(size: Int, fill: Int = 0x55) =
         ByteArray(size) { if (it == 0) (27 shl 3).toByte() else fill.toByte() }
 
     @Test
-    fun `el CRC coincide con el de Android`() {
+    fun `the CRC matches Android's`() {
         for (page in listOf(androidHeadPage, androidTagsPage)) {
             val stored = Ogg.getLe(page, 22, 4).toInt()
             val zeroed = page.copyOf().also { for (i in 22..25) it[i] = 0 }
@@ -30,7 +30,7 @@ class OggTest {
     }
 
     @Test
-    fun `el lector entiende un Ogg de Android`() {
+    fun `the reader understands an Android Ogg`() {
         val result = OggReader.read(androidHeadPage + androidTagsPage)
         assertEquals(2, result.pages.size)
         assertEquals(16_000, result.inputSampleRate)
@@ -38,17 +38,17 @@ class OggTest {
     }
 
     @Test
-    fun `duracion de paquetes Opus segun el TOC`() {
+    fun `Opus packet duration from the TOC`() {
         assertEquals(960, Ogg.opusPacketSamples(packet(10))) // CELT 20 ms
         assertEquals(480, Ogg.opusPacketSamples(byteArrayOf((26 shl 3).toByte()))) // CELT 10 ms
         assertEquals(2880, Ogg.opusPacketSamples(byteArrayOf((3 shl 3).toByte()))) // SILK 60 ms
-        assertEquals(1920, Ogg.opusPacketSamples(byteArrayOf(((27 shl 3) or 1).toByte()))) // 2 tramas de 20 ms
-        assertEquals(3 * 960, Ogg.opusPacketSamples(byteArrayOf(((27 shl 3) or 3).toByte(), 3))) // código 3
+        assertEquals(1920, Ogg.opusPacketSamples(byteArrayOf(((27 shl 3) or 1).toByte()))) // 2 frames of 20 ms
+        assertEquals(3 * 960, Ogg.opusPacketSamples(byteArrayOf(((27 shl 3) or 3).toByte(), 3))) // code 3
         assertEquals(0, Ogg.opusPacketSamples(ByteArray(0)))
     }
 
     @Test
-    fun `ida y vuelta con paginas de un segundo`() {
+    fun `round trip with one-second pages`() {
         val out = ByteArrayOutputStream()
         val packets = List(120) { packet(40 + it % 30, fill = it) }
         OggOpusWriter(out, serial = 7, preSkip = 312, inputSampleRate = 16_000).use { w ->
@@ -56,7 +56,7 @@ class OggTest {
         }
         val result = OggReader.read(out.toByteArray())
 
-        // OpusHead + OpusTags + 3 páginas de audio (50 + 50 + 20)
+        // OpusHead + OpusTags + 3 audio pages (50 + 50 + 20)
         assertEquals(5, result.pages.size)
         assertEquals(out.size(), result.validLength)
         assertEquals(312, result.preSkip)
@@ -70,7 +70,7 @@ class OggTest {
     }
 
     @Test
-    fun `paquetes de mas de 255 bytes usan varios valores de lacing`() {
+    fun `packets over 255 bytes use several lacing values`() {
         val out = ByteArrayOutputStream()
         val big = listOf(packet(255), packet(510), packet(600), packet(3))
         OggOpusWriter(out, serial = 1, preSkip = 0, inputSampleRate = 16_000).use { w -> big.forEach(w::writePacket) }
@@ -80,29 +80,29 @@ class OggTest {
     }
 
     @Test
-    fun `un archivo truncado es valido hasta la ultima pagina completa`() {
+    fun `a truncated file is valid up to the last complete page`() {
         val out = ByteArrayOutputStream()
         val writer = OggOpusWriter(out, serial = 3, preSkip = 312, inputSampleRate = 16_000)
         repeat(130) { writer.writePacket(packet(60)) }
-        // Sin close(): simula que el proceso murió en mitad de la grabación.
+        // No close(): simulates the process dying mid-recording.
         val bytes = out.toByteArray()
-        val cut = bytes + packet(30) // basura parcial al final
+        val cut = bytes + packet(30) // partial garbage at the end
 
         val result = OggReader.read(cut)
         assertEquals(bytes.size, result.validLength)
-        assertEquals(100, result.audioPackets.size) // dos páginas de 50 completas
+        assertEquals(100, result.audioPackets.size) // two complete pages of 50
         assertEquals(false, result.endsWithEos)
     }
 
     @Test
-    fun `un CRC corrupto detiene la lectura`() {
+    fun `a corrupt CRC stops reading`() {
         val out = ByteArrayOutputStream()
         OggOpusWriter(out, serial = 3, preSkip = 0, inputSampleRate = 16_000).use { w ->
             repeat(60) { w.writePacket(packet(60)) }
         }
         val bytes = out.toByteArray()
         val firstAudio = OggReader.read(bytes).pages[2]
-        bytes[firstAudio.offset + firstAudio.length - 1] = 0 // estropea el último byte de la página
+        bytes[firstAudio.offset + firstAudio.length - 1] = 0 // breaks the last byte of the page
         assertEquals(firstAudio.offset, OggReader.read(bytes).validLength)
     }
 }

@@ -1,4 +1,380 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- App -->
     <string name="app_name">Escriba</string>
+    <string name="channel_processing">Recording processing</string>
+
+    <!-- Common -->
+    <string name="back">Back</string>
+    <string name="next">Next</string>
+    <string name="cancel">Cancel</string>
+    <string name="close">Close</string>
+    <string name="save">Save</string>
+    <string name="create">Create</string>
+    <string name="delete">Delete</string>
+    <string name="change">Change</string>
+    <string name="refresh">Refresh</string>
+    <string name="clear">Clear</string>
+    <string name="skip">Skip</string>
+    <string name="loading">Loading…</string>
+    <string name="name">Name</string>
+    <string name="color">Colour</string>
+    <string name="none">None</string>
+    <string name="none_available">There\'s none</string>
+    <string name="not_chosen">Not chosen</string>
+    <string name="chosen">Chosen</string>
+    <string name="done">Done</string>
+    <string name="enabled">On</string>
+    <string name="ready">Ready</string>
+    <string name="pending">Pending</string>
+    <string name="found">Found</string>
+    <string name="not_there">Not there</string>
+    <string name="missing">Missing</string>
+    <string name="in_use">In use</string>
+    <string name="check">Check</string>
+    <string name="result">Result</string>
+    <string name="general">General</string>
+    <string name="created_list">Created: %1$s</string>
+    <string name="yesterday">Yesterday</string>
+    <string name="choose_folder">Choose folder</string>
+    <string name="more_actions">More actions</string>
+
+    <!-- Navigation -->
+    <string name="tab_today">Today</string>
+    <string name="tab_sessions">Sessions</string>
+    <string name="tab_dashboard">Dashboard</string>
+    <string name="tab_settings">Settings</string>
+    <string name="title_session">Session</string>
+    <string name="title_profile">Profile</string>
+
+    <!-- Conversation states -->
+    <string name="state_recording">Recording</string>
+    <string name="state_processing">Processing</string>
+    <string name="state_queued">Queued</string>
+    <string name="state_written">Written</string>
+    <string name="state_failed">Error</string>
+    <string name="state_audio_gone">No audio</string>
+    <string name="conversation_at">Conversation at %1$s</string>
+    <string name="conversation_n">Conversation %1$d</string>
+    <string name="speech_of">%1$s of speech</string>
+
+    <!-- Processing steps -->
+    <string name="step_preparing">Preparing the session…</string>
+    <string name="step_transcribing">Transcribing %1$d min %2$d s of speech…</string>
+    <string name="step_diarizing">Separating speakers in %1$d min of speech…</string>
+    <string name="step_summarizing">Summarizing with %1$s…</string>
+    <string name="step_writing">Writing the note…</string>
+
+    <!-- Today -->
+    <string name="today_empty">No conversations today yet. Whatever the watch records will show up here.</string>
+    <string name="today_open_dashboard">Open the dashboard: tasks, week and models</string>
+    <string name="watch">Watch</string>
+    <string name="watch_not_paired">Not paired</string>
+    <string name="watch_no_news">No news</string>
+    <string name="watch_paused">Paused</string>
+    <string name="watch_stopped">Stopped</string>
+    <string name="watch_pair_hint">Pair the watch so it starts sending what it records.</string>
+    <string name="watch_battery">Battery %1$d %%</string>
+    <string name="watch_battery_charging">Battery %1$d %%, charging</string>
+    <string name="watch_all_sent">All sent</string>
+    <string name="watch_last_seen">update at %1$s</string>
+
+    <!-- Dashboard -->
+    <string name="period_week">Week</string>
+    <string name="period_month">Month</string>
+    <string name="period_all">All</string>
+    <string name="dash_tasks">Tasks</string>
+    <string name="dash_tasks_empty">Tasks that come up in your conversations will show up here.</string>
+    <string name="dash_task_due">due %1$s</string>
+    <string name="dash_recorded_time">Recorded time</string>
+    <string name="dash_transcription">Transcription</string>
+    <string name="dash_speech_minutes">%1$s of speech</string>
+    <string name="dash_compute">Compute: %1$s · ×%2$.2f of real time (an hour of speech in about %3$d min)</string>
+    <string name="dash_summaries">Summaries</string>
+    <string name="dash_tokens">%1$s tokens</string>
+    <string name="dash_tokens_empty">Tokens are counted from version 1.0: they\'ll show up with the next summaries.</string>
+    <string name="dash_tokens_detail">Read %1$s · written %2$s · %3$d summaries</string>
+
+    <!-- Sessions -->
+    <string name="sessions_empty_title">No sessions yet</string>
+    <string name="sessions_empty_body">When the watch records something and sends it, each conversation will show up here with its time, profile and state.</string>
+    <string name="session_ongoing">Ongoing</string>
+    <string name="session_missing_fragments">Missing fragments</string>
+    <string name="session_audio_deleted">Audio deleted (retention)</string>
+    <string name="process_now">Process now</string>
+    <string name="reprocess">Reprocess</string>
+    <string name="reprocess_as">Reprocess as %1$s</string>
+    <string name="voices">Voices</string>
+    <string name="delete_session">Delete the session</string>
+    <string name="delete_session_title">Delete the session?</string>
+    <string name="delete_session_body">Its audio is deleted from the phone. Notes already written to the vault aren\'t touched. This can\'t be undone.</string>
+    <string name="summary">Summary</string>
+    <string name="decisions">Decisions</string>
+    <string name="no_transcript_yet">No transcript yet.</string>
+    <string name="listen">Listen</string>
+    <string name="pause">Pause</string>
+    <string name="open_in_obsidian">Open in Obsidian</string>
+
+    <!-- Voices -->
+    <string name="session_voices">Session voices</string>
+    <string name="session_voices_hint">Name the people you recognize (\"Me\", \"Ana López\"…). Their voiceprint is stored only on this phone and is used to recognize them in later sessions.</string>
+    <string name="separating_speakers">Separating speakers…</string>
+    <string name="speakers_not_separated">This session\'s speakers haven\'t been separated yet.</string>
+    <string name="detect_speakers">Detect speakers</string>
+    <string name="speaker_speech">%1$s · %2$d s of speech</string>
+    <string name="too_little_speech">Too little speech to enroll.</string>
+    <string name="save_and_reprocess">Save and reprocess</string>
+    <string name="voices_local_only">Only on this phone: they never go to the vault or the watch.</string>
+    <string name="voices_none_yet">None yet. Name them from \"Voices\" in a session.</string>
+    <string name="delete_voice_title">Delete the voice \"%1$s\"?</string>
+    <string name="delete_voice_body">Its voiceprint is deleted. Notes already written don\'t change.</string>
+    <string name="voices_page_hint">Name voices from \"Voices\" in a session\'s detail. Voiceprints are stored only on this phone: they never go to the vault or the watch.</string>
+
+    <!-- Settings -->
+    <string name="appearance">Appearance</string>
+    <string name="light">Light</string>
+    <string name="dark">Dark</string>
+    <string name="settings_watch">Watch</string>
+    <string name="settings_vault">Vault and profiles</string>
+    <string name="settings_voices">Enrolled voices</string>
+    <string name="settings_models">Models</string>
+    <string name="settings_benchmark">Benchmarks</string>
+    <string name="settings_storage">Storage</string>
+    <string name="settings_battery">Battery</string>
+    <string name="settings_log">Log</string>
+    <string name="paired_with">Paired with %1$s</string>
+    <string name="no_models_folder">No models folder</string>
+    <string name="settings_storage_hint">Saved audio and when it\'s deleted</string>
+    <string name="settings_battery_hint">So the system doesn\'t close Escriba</string>
+    <string name="settings_log_hint">What the app has done, for diagnosis</string>
+    <string name="tour">Welcome tour</string>
+    <string name="tour_hint">Set things up again step by step</string>
+
+    <!-- Watch -->
+    <string name="watch_not_paired_hint">Without pairing, the watch sends nothing.</string>
+    <string name="checking">Checking</string>
+    <string name="not_connected">Not connected</string>
+    <string name="connected_bluetooth">Connected over Bluetooth</string>
+    <string name="cloud_only">Cloud only: not used</string>
+    <string name="paired_since">Paired since %1$s · key %2$s</string>
+    <string name="phase_recording">recording</string>
+    <string name="phase_paused">paused</string>
+    <string name="phase_stopped">stopped</string>
+    <string name="watch_status_line">Last update at %1$s: %2$s · %3$d to send (%4$d KB)</string>
+    <string name="pairing_check_code">Check that the watch shows the same code:</string>
+    <string name="pairing_confirm_on_watch">Now confirm on the watch.</string>
+    <string name="pairing_watch_confirmed">The watch has already confirmed.</string>
+    <string name="pairing_matches">It matches</string>
+    <string name="pairing_no_match">It doesn\'t match</string>
+    <string name="pairing_wait_phone">Tap \"Pair\" on the phone</string>
+    <string name="pairing_wait_watch">Open Escriba on the watch and tap \"Pair\" (Phone section)</string>
+    <string name="pairing_wait_code">Computing the code…</string>
+    <string name="pairing_failed_no_phone">There\'s no nearby phone with Escriba.</string>
+    <string name="pairing_failed_not_direct">The watch isn\'t directly connected over Bluetooth.</string>
+    <string name="pairing_failed_commitment">The watch\'s key doesn\'t match what it announced. Pairing was cancelled for safety.</string>
+    <string name="pairing_failed_confirmation">The confirmation from the watch isn\'t valid. Try again.</string>
+    <string name="pairing_done">Pairing complete</string>
+    <string name="pair_watch">Pair watch</string>
+    <string name="pair_again">Pair again</string>
+    <string name="test_connection">Test connection</string>
+    <string name="watch_not_connected">The watch isn\'t connected</string>
+    <string name="watch_paired">Watch paired</string>
+
+    <!-- Battery -->
+    <string name="battery_intro">MagicOS closes background apps to save battery. If it closes Escriba, the audio waits on the watch until you open the app again.</string>
+    <string name="battery_step1">1. Android battery optimization</string>
+    <string name="battery_step1_exempt">Escriba is already exempt.</string>
+    <string name="battery_step1_optimized">Escriba is optimized: the system may close it.</string>
+    <string name="battery_exempt">Exempt</string>
+    <string name="battery_exempt_action">Exempt Escriba</string>
+    <string name="battery_step2">2. MagicOS app launch</string>
+    <string name="battery_step2_body">Settings → Battery → App launch → Escriba: turn off \"Manage automatically\" and turn on auto-launch, secondary launch (the watch uses it to wake Escriba) and run in background.</string>
+    <string name="battery_open_settings">Open Escriba\'s settings</string>
+    <string name="battery_step3">3. On the watch</string>
+    <string name="battery_step3_body">In the watch app, Phone section, tap \"No battery optimization\" and accept.</string>
+    <string name="battery_step4">4. Check</string>
+    <string name="battery_step4_body">Close Escriba on the phone (swipe it away in recents) and tap \"Test connection\" in the watch\'s Diagnostics: it should reply.</string>
+
+    <!-- Models -->
+    <string name="models_folder">Models folder</string>
+    <string name="models_folder_hint">Models don\'t go inside the app: leave them in a folder (e.g. Download/models) and choose it. Escriba reads them from there.</string>
+    <string name="model_segmentation">Speaker separation · pyannote 3.0</string>
+    <string name="model_embedding">Voiceprints · 3D-Speaker</string>
+    <string name="models_choice_hint">Which model each profile uses is chosen in the profile (engine) and in escriba.md.</string>
+    <string name="benchmark_hint">Measures how long each model takes with a real session</string>
+    <string name="benchmark_intro">Benchmarks don\'t write notes or change anything: they only measure.</string>
+    <string name="benchmark_step_session">1 · Test session</string>
+    <string name="benchmark_step_asr">2 · Transcription</string>
+    <string name="benchmark_step_llm">3 · Summary</string>
+    <string name="benchmark_session">%1$s · %2$d s of speech</string>
+    <string name="benchmark_session_profile">%1$s · %2$s · %3$d s of speech</string>
+    <string name="benchmark_pick_session">Choose a session with audio</string>
+    <string name="pick_model">Choose the model</string>
+    <string name="threads">Threads</string>
+    <string name="fast_mode">Fast mode</string>
+    <string name="transcribe">Transcribe</string>
+    <string name="summarize">Summarize</string>
+    <string name="benchmark_llm_hint">Uses the session\'s stored transcript and the profile it was processed with.</string>
+    <string name="measuring">Measuring</string>
+    <string name="realtime_factor">×%1$.2f of real time</string>
+    <string name="asr_result">%1$s · %2$d s of audio in %3$d s with %4$d threads. An hour of speech would take about %5$d min.</string>
+    <string name="asr_result_detail">Load %1$d ms · decoding %2$d ms · lines %3$d/%4$d after the filter</string>
+    <string name="tokens_per_second">%1$.1f tokens/s</string>
+    <string name="llm_result">%1$s · load %2$d ms · total %3$d s · read %4$d tokens at %5$.0f t/s · %6$d chunk(s)</string>
+    <string name="llm_entities">People: %1$s · Projects: %2$s · Clients: %3$s</string>
+    <string name="bench_loading">Loading %1$s…</string>
+    <string name="bench_transcribing">Transcribing %1$d fragments with %2$d threads…</string>
+    <string name="bench_summarizing">Summarizing %1$d lines with %2$s (profile %3$s)…</string>
+
+    <!-- Vault and profiles -->
+    <string name="obsidian_vault">Obsidian vault</string>
+    <string name="vault">Vault</string>
+    <string name="vault_choose_hint">Choose your vault\'s folder (e.g. Documents/Obsidian/Escriba). Escriba will only be able to touch what\'s inside.</string>
+    <string name="vault_missing_config">Missing configuration</string>
+    <string name="vault_create_hint">Escriba needs to create this in your vault. Nothing that already exists is overwritten:</string>
+    <string name="vault_create">Create configuration</string>
+    <string name="vault_check_config">Check the configuration</string>
+    <string name="vault_config_errors">There are values Escriba doesn\'t understand in these vault files. Meanwhile it uses the default value.</string>
+    <string name="profiles">Profiles</string>
+    <string name="new_profile">New profile</string>
+    <string name="profiles_hint">Profiles are files in %1$s in your vault: you can edit them here or in Obsidian.</string>
+    <string name="vault_reload">Read the vault again</string>
+    <string name="vault_reload_hint">If you changed profiles in Obsidian</string>
+    <string name="profiles_send">Send profiles to the watch</string>
+    <string name="profiles_send_hint">They\'re sent automatically when they change; this forces it</string>
+    <string name="profiles_sent">Sent</string>
+    <string name="favorite">Favourite</string>
+    <string name="default_profile">Default</string>
+    <string name="mode_continuous">Continuous</string>
+    <string name="mode_on_demand">On demand</string>
+    <string name="tag_speakers">who speaks</string>
+    <string name="tag_tasks">tasks</string>
+    <string name="tag_saves_audio">saves audio</string>
+    <string name="inherits_from">Inherits from \"%1$s\". What you change here is saved only in this profile.</string>
+    <string name="notes_folder">Notes folder</string>
+    <string name="notes_folder_hint">Accepts {{yyyy}} and {{MM}}</string>
+    <string name="watch_icon">Icon on the watch</string>
+    <string name="recording">Recording</string>
+    <string name="continuous_mode">Continuous mode</string>
+    <string name="continuous_mode_hint">Records the whole schedule; otherwise only when you tap</string>
+    <string name="favorite_hint">Shows up first on the watch</string>
+    <string name="processing">Processing</string>
+    <string name="asr_engine">Transcription engine</string>
+    <string name="engine_parakeet_hint">About 10 times faster; no profile vocabulary.</string>
+    <string name="engine_whisper_hint">More accurate with proper names thanks to the profile\'s vocabulary.</string>
+    <string name="toggle_diarization">Separate who speaks</string>
+    <string name="toggle_diarization_hint">Puts each voice\'s name in the transcript</string>
+    <string name="toggle_tasks">Extract tasks</string>
+    <string name="toggle_tasks_hint">With owner and date when they\'re mentioned</string>
+    <string name="toggle_discard">Discard trivial ones</string>
+    <string name="toggle_discard_hint">Doesn\'t write a note for conversations with no content</string>
+    <string name="toggle_save_audio">Save the audio in the vault</string>
+    <string name="toggle_save_audio_hint">Next to the note, to listen to it later</string>
+    <string name="summary_instructions">Summary instructions</string>
+    <string name="color_pine">pine</string>
+    <string name="color_lapis">lapis</string>
+    <string name="color_ochre">ochre</string>
+    <string name="color_plum">plum</string>
+    <string name="color_slate">slate</string>
+    <string name="color_terracotta">terracotta</string>
+    <string name="color_named">Colour %1$s</string>
+    <string name="new_profile_example">E.g. \"Acme meetings\"</string>
+    <string name="based_on">Based on</string>
+    <string name="new_profile_defaults">Starts with default values; you adjust them on the next screen.</string>
+    <string name="new_profile_inherits">Inherits everything from that profile: only what you change is saved.</string>
+    <string name="icon_mic">Microphone</string>
+    <string name="icon_briefcase">Briefcase</string>
+    <string name="icon_idea">Idea</string>
+    <string name="icon_home">Home</string>
+    <string name="icon_person">Person</string>
+    <string name="icon_group">Group</string>
+    <string name="icon_phone">Phone</string>
+    <string name="icon_car">Car</string>
+    <string name="icon_book">Book</string>
+    <string name="icon_star">Star</string>
+
+    <!-- Storage -->
+    <string name="on_this_phone">On this phone</string>
+    <string name="audio_mb">%1$.1f MB of audio</string>
+    <string name="phone_retention">It\'s deleted %1$d days after its note is written (phone_audio_retention in escriba.md).</string>
+    <string name="in_the_vault">In the vault</string>
+    <string name="no_audio_saved">Doesn\'t save audio</string>
+    <string name="kept_forever">Kept forever</string>
+    <string name="cleanup_hint">Cleanup runs by itself once a day. Notes are never deleted: only the audio, and the note says so.</string>
+    <string name="cleanup_running">Cleanup running</string>
+    <string name="cleanup_now">Clean up expired audio now</string>
+
+    <!-- Welcome tour -->
+    <string name="tour_vault">Your Obsidian vault</string>
+    <string name="tour_models">The models</string>
+    <string name="tour_watch">The watch</string>
+    <string name="tour_system">Notifications and battery</string>
+    <string name="tour_ready">All set</string>
+    <string name="tour_start">Start</string>
+    <string name="tour_finish">Start using Escriba</string>
+    <string name="tour_welcome">Record on the watch, transcribe and summarize on the phone, and keep each conversation as a note in your Obsidian vault.</string>
+    <string name="tour_welcome_private">Everything happens on this phone: no Internet and no accounts. The audio travels from the watch encrypted.</string>
+    <string name="tour_welcome_profiles">Each profile (work, a client, ideas…) decides where the notes go, what summary is made and whether the audio is kept.</string>
+    <string name="tour_welcome_minutes">In a few minutes it\'s ready: the vault, the models, the watch and two permissions.</string>
+    <string name="tour_vault_lead">Escriba writes the notes in a folder of your vault (e.g. Documents/Obsidian/Escriba) and can only touch what\'s inside.</string>
+    <string name="tour_choose_vault">Choose the vault folder</string>
+    <string name="tour_choose_models">Choose the models folder</string>
+    <string name="tour_need_speakers">Who speaks (optional)</string>
+    <string name="tour_need_parakeet">Parakeet (optional, faster)</string>
+    <string name="tour_watch_lead">Install Escriba on the watch, open it and tap \"Pair watch\" here. Both will show the same code: check it and confirm.</string>
+    <string name="notifications">Notifications</string>
+    <string name="notifications_hint">To see what\'s being transcribed or summarized.</string>
+    <string name="allow_notifications">Allow notifications</string>
+    <string name="no_battery_optimization">No battery optimization</string>
+    <string name="battery_hint">If the system closes Escriba, the audio waits on the watch.</string>
+    <string name="tour_magicos">On MagicOS, also</string>
+    <string name="tour_magicos_hint">Settings → Battery → App launch → Escriba: turn off \"Manage automatically\" and turn on all three options.</string>
+    <string name="tour_ready_lead">You can now record from the watch: the app\'s button, the Tile or the complication. The notes will show up in your vault.</string>
+    <string name="tour_ready_hint">What\'s pending can be done later in Settings, and this tour can be repeated from Settings → Welcome tour.</string>
+
+    <!-- Plurals -->
+    <plurals name="conversations">
+        <item quantity="one">%d conversation</item>
+        <item quantity="other">%d conversations</item>
+    </plurals>
+    <plurals name="conversations_waiting">
+        <item quantity="one">%d conversation is waiting. Long sessions are processed while the phone charges.</item>
+        <item quantity="other">%d conversations are waiting. Long sessions are processed while the phone charges.</item>
+    </plurals>
+    <plurals name="deleted_after_days">
+        <item quantity="one">Deleted after %d day</item>
+        <item quantity="other">Deleted after %d days</item>
+    </plurals>
+    <plurals name="failed_count">
+        <item quantity="one">%d with an error</item>
+        <item quantity="other">%d with an error</item>
+    </plurals>
+    <plurals name="files_count">
+        <item quantity="one">%d file</item>
+        <item quantity="other">%d files</item>
+    </plurals>
+    <plurals name="models_count">
+        <item quantity="one">%d model</item>
+        <item quantity="other">%d models</item>
+    </plurals>
+    <plurals name="redetect_speakers">
+        <item quantity="one">Detect again (%d speaker)</item>
+        <item quantity="other">Detect again (%d speakers)</item>
+    </plurals>
+    <plurals name="sessions_with_audio">
+        <item quantity="one">%d session with audio.</item>
+        <item quantity="other">%d sessions with audio.</item>
+    </plurals>
+    <plurals name="vault_audios">
+        <item quantity="one">%d audio file next to its note</item>
+        <item quantity="other">%d audio files next to their notes</item>
+    </plurals>
+    <plurals name="voice_sessions">
+        <item quantity="one">%1$s · %2$d session</item>
+        <item quantity="other">%1$s · %2$d sessions</item>
+    </plurals>
+    <plurals name="watch_pending">
+        <item quantity="one">%d fragment to send</item>
+        <item quantity="other">%d fragments to send</item>
+    </plurals>
 </resources>

@@ -3,7 +3,7 @@ package dev.escriba.mobile.processing
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
-/** Qué se está procesando ahora mismo, para el panel y la lista de sesiones. */
+/** What's being processed right now, for the dashboard and the sessions list. */
 object ProcessingStatus {
     data class Current(val sessionId: String, val step: String)
 

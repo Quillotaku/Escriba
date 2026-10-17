@@ -3,12 +3,12 @@ package dev.escriba.shared.recording
 import dev.escriba.shared.Segment
 
 /**
- * Diario de segmentos de un fragmento abierto: una línea por evento, añadida al momento.
+ * Segment journal of an open fragment: one line per event, appended as it happens.
  *
- * Si el proceso muere, el Ogg queda válido hasta su última página completa, pero la tabla de
- * segmentos solo vivía en memoria. Con el diario y la duración real del Ogg se reconstruye.
+ * If the process dies, the Ogg file stays valid up to its last complete page, but the segment
+ * table only lived in memory. The journal plus the Ogg's real duration rebuild it.
  *
- * Formato: `S <offsetAudioMs> <inicioRealMs>` al empezar un segmento y `E <duracionMs>` al acabar.
+ * Format: `S <audioOffsetMs> <wallStartMs>` when a segment starts and `E <durationMs>` when it ends.
  */
 object FragmentJournal {
 
@@ -17,8 +17,8 @@ object FragmentJournal {
     fun end(durationMs: Long) = "E $durationMs"
 
     /**
-     * Reconstruye los segmentos a partir del diario. [audioDurationMs] es lo que se ha podido
-     * salvar del Ogg: los segmentos que sigan abiertos o que lo sobrepasen se recortan.
+     * Rebuilds the segments from the journal. [audioDurationMs] is what could be saved from the
+     * Ogg: segments still open, or longer than that, are trimmed.
      */
     fun recover(lines: List<String>, audioDurationMs: Long): List<Segment> {
         val segments = ArrayList<Segment>()

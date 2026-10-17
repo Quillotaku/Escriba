@@ -32,6 +32,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import dev.escriba.mobile.R
+import dev.escriba.datalayer.PairingFailure
+import dev.escriba.datalayer.PairingWait
+import androidx.annotation.StringRes
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -54,7 +60,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.format.DateTimeFormatter
 
-/** Lo que solo puede hacer la actividad (abrir ajustes del sistema). */
+/** What only the activity can do (open system settings). */
 class SystemActions(
     val isBatteryExempt: () -> Boolean,
     val requestBatteryExemption: () -> Unit,
@@ -63,7 +69,7 @@ class SystemActions(
 
 enum class SettingsPage { WATCH, VAULT, VOICES, MODELS, BENCHMARK, STORAGE, BATTERY, LOG }
 
-/** Columna con desplazamiento y los márgenes del sistema. */
+/** Scrolling column with the system's margins. */
 @Composable
 fun Page(padding: PaddingValues, content: @Composable () -> Unit) {
     Column(
@@ -83,29 +89,34 @@ fun SettingsScreen(app: EscribaApp, padding: PaddingValues, open: (SettingsPage)
     val voices by app.db.sessions().observeVoices().collectAsStateWithLifecycle(emptyList())
 
     Page(padding) {
-        Overline("Apariencia")
+        Overline(stringResource(R.string.appearance))
         EsCard {
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                 val isDark = dark ?: systemDark
-                listOf(false to "Claro", true to "Oscuro").forEachIndexed { i, (value, label) ->
+                listOf(false to R.string.light, true to R.string.dark).forEachIndexed { i, (value, label) ->
                     SegmentedButton(
                         selected = isDark == value,
                         onClick = { app.appearance.set(value) },
                         shape = SegmentedButtonDefaults.itemShape(i, 2),
-                    ) { Text(label) }
+                    ) { Text(stringResource(label)) }
                 }
             }
         }
         Overline("Escriba", Modifier.padding(top = Space.s3))
         EsCard(Modifier) {
             val rows = listOf(
-                Triple(EscribaIcons.Watch, "Reloj", peer?.let { "Emparejado con ${it.name}" } ?: "Sin emparejar") to SettingsPage.WATCH,
-                Triple(Icons.Rounded.Edit, "Bóveda y perfiles", app.vault.displayPath() ?: "Sin elegir") to SettingsPage.VAULT,
-                Triple(EscribaIcons.People, "Voces registradas", if (voices.isEmpty()) "Ninguna" else voices.joinToString { it.name }) to SettingsPage.VOICES,
-                Triple(EscribaIcons.Waveform, "Modelos", if (folder == null) "Sin carpeta de modelos" else "${app.models.models.value.size} modelos") to SettingsPage.MODELS,
-                Triple(Icons.Rounded.Delete, "Almacenamiento", "Audio guardado y cuándo se borra") to SettingsPage.STORAGE,
-                Triple(EscribaIcons.Battery, "Batería", "Que el sistema no cierre Escriba") to SettingsPage.BATTERY,
-                Triple(EscribaIcons.Notes, "Registro", "Lo que ha hecho la app, para diagnosticar") to SettingsPage.LOG,
+                Triple(EscribaIcons.Watch, stringResource(R.string.settings_watch), peer?.let { stringResource(R.string.paired_with, it.name) } ?: stringResource(R.string.watch_not_paired)) to SettingsPage.WATCH,
+                Triple(Icons.Rounded.Edit, stringResource(R.string.settings_vault), app.vault.displayPath() ?: stringResource(R.string.not_chosen)) to SettingsPage.VAULT,
+                Triple(EscribaIcons.People, stringResource(R.string.settings_voices), if (voices.isEmpty()) stringResource(R.string.none) else voices.joinToString { it.name }) to SettingsPage.VOICES,
+                Triple(
+                    EscribaIcons.Waveform,
+                    stringResource(R.string.settings_models),
+                    if (folder == null) stringResource(R.string.no_models_folder)
+                    else pluralStringResource(R.plurals.models_count, app.models.models.value.size, app.models.models.value.size),
+                ) to SettingsPage.MODELS,
+                Triple(Icons.Rounded.Delete, stringResource(R.string.settings_storage), stringResource(R.string.settings_storage_hint)) to SettingsPage.STORAGE,
+                Triple(EscribaIcons.Battery, stringResource(R.string.settings_battery), stringResource(R.string.settings_battery_hint)) to SettingsPage.BATTERY,
+                Triple(EscribaIcons.Notes, stringResource(R.string.settings_log), stringResource(R.string.settings_log_hint)) to SettingsPage.LOG,
             )
             rows.forEachIndexed { i, (row, page) ->
                 if (i > 0) HorizontalDivider(color = c.rule)
@@ -113,27 +124,27 @@ fun SettingsScreen(app: EscribaApp, padding: PaddingValues, open: (SettingsPage)
             }
         }
         EsCard {
-            SettingRow(Icons.Rounded.PlayArrow, "Tour de inicio", "Volver a configurar paso a paso", onClick = { app.onboarding.restart() })
+            SettingRow(Icons.Rounded.PlayArrow, stringResource(R.string.tour), stringResource(R.string.tour_hint), onClick = { app.onboarding.restart() })
         }
     }
 }
 
-// --- Voces -------------------------------------------------------------------
+// --- Voices ------------------------------------------------------------------
 
 @Composable
 fun VoicesPage(app: EscribaApp, padding: PaddingValues) {
     Page(padding) {
         Text(
-            "Pon nombre a las voces desde «Voces» en el detalle de una sesión. Las huellas se guardan solo en este móvil: nunca van a la bóveda ni al reloj.",
+            stringResource(R.string.voices_page_hint),
             style = MaterialTheme.typography.bodyLarge, color = Escriba.colors.inkMuted,
         )
         EnrolledVoicesCard(app)
     }
 }
 
-// --- Reloj -------------------------------------------------------------------
+// --- Watch -------------------------------------------------------------------
 
-private val DATE = DateTimeFormatter.ofPattern("EEE d MMM · HH:mm", dev.escriba.mobile.ui.today.ES)
+private val DATE = DateTimeFormatter.ofPattern("EEE, MMM d · HH:mm", dev.escriba.mobile.ui.today.APP_LOCALE)
 
 @Composable
 fun WatchPage(app: EscribaApp, padding: PaddingValues) {
@@ -155,27 +166,30 @@ fun WatchPage(app: EscribaApp, padding: PaddingValues) {
         EsCard {
             val p = peer
             if (p == null) {
-                StatusChip("Sin emparejar", Tone.WAIT)
-                Text("Sin emparejamiento el reloj no envía nada.", style = MaterialTheme.typography.bodyLarge, color = c.ink)
+                StatusChip(stringResource(R.string.watch_not_paired), Tone.WAIT)
+                Text(stringResource(R.string.watch_not_paired_hint), style = MaterialTheme.typography.bodyLarge, color = c.ink)
             } else {
                 val connected = nodes?.firstOrNull { it.id == p.nodeId }
                 when {
-                    nodes == null -> StatusChip("Comprobando", Tone.BUSY)
-                    connected == null -> StatusChip("No conectado", Tone.WAIT)
-                    connected.nearby -> StatusChip("Conectado por Bluetooth", Tone.DONE)
-                    else -> StatusChip("Solo por la nube: no se usa", Tone.WAIT)
+                    nodes == null -> StatusChip(stringResource(R.string.checking), Tone.BUSY)
+                    connected == null -> StatusChip(stringResource(R.string.not_connected), Tone.WAIT)
+                    connected.nearby -> StatusChip(stringResource(R.string.connected_bluetooth), Tone.DONE)
+                    else -> StatusChip(stringResource(R.string.cloud_only), Tone.WAIT)
                 }
                 Text(p.name, style = MaterialTheme.typography.titleMedium, color = c.ink)
-                Text("Emparejado desde ${p.pairedAtMs.local().format(DATE)} · clave ${p.keyId}", style = MaterialTheme.typography.bodyMedium, color = c.inkMuted)
+                Text(stringResource(R.string.paired_since, p.pairedAtMs.local().format(DATE), p.keyId), style = MaterialTheme.typography.bodyMedium, color = c.inkMuted)
             }
             status?.let { st ->
+                val phase = stringResource(
+                    when (st.phase) {
+                        "CAPTURING" -> R.string.phase_recording
+                        "PAUSED" -> R.string.phase_paused
+                        else -> R.string.phase_stopped
+                    },
+                )
                 Text(
-                    "Último aviso a las ${st.atMs.local().format(HM)}: " + when (st.phase) {
-                        "CAPTURING" -> "grabando"
-                        "PAUSED" -> "en pausa"
-                        else -> "parado"
-                    } + " · ${st.pendingFragments} por enviar (${st.pendingBytes / 1024} KB)" +
-                        (st.batteryPct?.let { " · batería ${it.toInt()} %" } ?: "") + if (st.charging) ", cargando" else "",
+                    stringResource(R.string.watch_status_line, st.atMs.local().format(HM), phase, st.pendingFragments, (st.pendingBytes / 1024).toInt()) +
+                        (st.batteryPct?.let { " · " + stringResource(if (st.charging) R.string.watch_battery_charging else R.string.watch_battery, it.toInt()) } ?: ""),
                     style = MaterialTheme.typography.bodyMedium, color = c.inkMuted,
                 )
             }
@@ -183,37 +197,37 @@ fun WatchPage(app: EscribaApp, padding: PaddingValues) {
 
         when (val state = pairing) {
             is PairingState.Code -> EsCard {
-                Text("Comprueba que el reloj muestra el mismo código:", style = MaterialTheme.typography.bodyLarge, color = c.ink)
+                Text(stringResource(R.string.pairing_check_code), style = MaterialTheme.typography.bodyLarge, color = c.ink)
                 Text(state.code, style = Escriba.type.metric.copy(fontSize = 40.sp, lineHeight = 44.sp), color = c.ink)
                 when {
-                    state.localConfirmed && !state.peerConfirmed -> Text("Ahora confirma en el reloj.", color = c.inkMuted)
-                    state.peerConfirmed && !state.localConfirmed -> Text("El reloj ya ha confirmado.", color = c.inkMuted)
+                    state.localConfirmed && !state.peerConfirmed -> Text(stringResource(R.string.pairing_confirm_on_watch), color = c.inkMuted)
+                    state.peerConfirmed && !state.localConfirmed -> Text(stringResource(R.string.pairing_watch_confirmed), color = c.inkMuted)
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
-                    if (!state.localConfirmed) Button(onClick = { scope.launch { runCatching { app.pairing.confirm() } } }) { Text("Coincide") }
-                    OutlinedButton(onClick = { app.pairing.cancel() }) { Text("No coincide") }
+                    if (!state.localConfirmed) Button(onClick = { scope.launch { runCatching { app.pairing.confirm() } } }) { Text(stringResource(R.string.pairing_matches)) }
+                    OutlinedButton(onClick = { app.pairing.cancel() }) { Text(stringResource(R.string.pairing_no_match)) }
                 }
             }
             is PairingState.Waiting -> EsCard {
-                Text(state.message, style = MaterialTheme.typography.bodyLarge, color = c.ink)
-                OutlinedButton(onClick = { app.pairing.cancel() }) { Text("Cancelar") }
+                Text(stringResource(state.wait.text), style = MaterialTheme.typography.bodyLarge, color = c.ink)
+                OutlinedButton(onClick = { app.pairing.cancel() }) { Text(stringResource(R.string.cancel)) }
             }
             else -> {
-                (state as? PairingState.Failed)?.let { Text(it.reason, color = c.danger, style = MaterialTheme.typography.bodyMedium) }
-                (state as? PairingState.Done)?.let { StatusChip("Emparejamiento completado", Tone.DONE) }
+                (state as? PairingState.Failed)?.let { Text(stringResource(it.reason.text), color = c.danger, style = MaterialTheme.typography.bodyMedium) }
+                (state as? PairingState.Done)?.let { StatusChip(stringResource(R.string.pairing_done), Tone.DONE) }
                 Row(horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
-                    if (peer == null) Button(onClick = { app.pairing.openWindowAsPhone() }) { Text("Emparejar reloj") }
-                    else OutlinedButton(onClick = { app.pairing.openWindowAsPhone() }) { Text("Volver a emparejar") }
+                    if (peer == null) Button(onClick = { app.pairing.openWindowAsPhone() }) { Text(stringResource(R.string.pair_watch)) }
+                    else OutlinedButton(onClick = { app.pairing.openWindowAsPhone() }) { Text(stringResource(R.string.pair_again)) }
                     OutlinedButton(onClick = {
-                        scope.launch { runCatching { app.link.pingNearby() }.onFailure { AppLog.e("ui", "Fallo al enviar el ping", it) } }
-                    }) { Text("Probar conexión") }
+                        scope.launch { runCatching { app.link.pingNearby() }.onFailure { AppLog.e("ui", "Failed to send the ping", it) } }
+                    }) { Text(stringResource(R.string.test_connection)) }
                 }
             }
         }
     }
 }
 
-// --- Batería -----------------------------------------------------------------
+// --- Battery -----------------------------------------------------------------
 
 @Composable
 fun BatteryPage(actions: SystemActions, padding: PaddingValues) {
@@ -235,22 +249,22 @@ fun BatteryPage(actions: SystemActions, padding: PaddingValues) {
     }
     Page(padding) {
         Text(
-            "MagicOS cierra las apps en segundo plano para ahorrar batería. Si cierra Escriba, el audio espera en el reloj hasta que vuelvas a abrir la app.",
+            stringResource(R.string.battery_intro),
             style = MaterialTheme.typography.bodyLarge, color = c.inkMuted,
         )
-        Step("1. Optimización de batería de Android", if (exempt) "Escriba ya está excluida." else "Escriba está optimizada: el sistema puede cerrarla.") {
-            if (exempt) StatusChip("Excluida", Tone.DONE) else Button(onClick = actions.requestBatteryExemption) { Text("Excluir a Escriba") }
+        Step(stringResource(R.string.battery_step1), stringResource(if (exempt) R.string.battery_step1_exempt else R.string.battery_step1_optimized)) {
+            if (exempt) StatusChip(stringResource(R.string.battery_exempt), Tone.DONE) else Button(onClick = actions.requestBatteryExemption) { Text(stringResource(R.string.battery_exempt_action)) }
         }
         Step(
-            "2. Inicio de aplicaciones de MagicOS",
-            "Ajustes → Batería → Inicio de aplicaciones → Escriba: desactiva «Gestionar automáticamente» y activa inicio automático, inicio secundario (lo usa el reloj para despertar a Escriba) y ejecución en segundo plano.",
-        ) { OutlinedButton(onClick = actions.openAppSettings) { Text("Abrir los ajustes de Escriba") } }
-        Step("3. En el reloj", "En la app del reloj, sección «Móvil», pulsa «Sin optimización de batería» y acepta.")
-        Step("4. Comprobación", "Cierra Escriba en el móvil (deslízala en recientes) y pulsa «Ping al móvil» en el reloj: debe responder.")
+            stringResource(R.string.battery_step2),
+            stringResource(R.string.battery_step2_body),
+        ) { OutlinedButton(onClick = actions.openAppSettings) { Text(stringResource(R.string.battery_open_settings)) } }
+        Step(stringResource(R.string.battery_step3), stringResource(R.string.battery_step3_body))
+        Step(stringResource(R.string.battery_step4), stringResource(R.string.battery_step4_body))
     }
 }
 
-// --- Registro ----------------------------------------------------------------
+// --- Log ---------------------------------------------------------------------
 
 @Composable
 fun LogPage(padding: PaddingValues) {
@@ -263,9 +277,26 @@ fun LogPage(padding: PaddingValues) {
         contentPadding = PaddingValues(start = Space.s4, end = Space.s4, top = padding.calculateTopPadding() + Space.s2, bottom = padding.calculateBottomPadding() + Space.s4),
         verticalArrangement = Arrangement.spacedBy(Space.s1),
     ) {
-        item { OutlinedButton(onClick = { AppLog.events.clear() }) { Text("Limpiar") } }
+        item { OutlinedButton(onClick = { AppLog.events.clear() }) { Text(stringResource(R.string.clear)) } }
         items(log) { entry ->
             Text(entry.toString(), style = Escriba.type.time.copy(fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Normal), color = c.ink)
         }
     }
 }
+
+@get:StringRes
+private val PairingWait.text: Int
+    get() = when (this) {
+        PairingWait.PHONE -> R.string.pairing_wait_phone
+        PairingWait.WATCH -> R.string.pairing_wait_watch
+        PairingWait.CODE -> R.string.pairing_wait_code
+    }
+
+@get:StringRes
+private val PairingFailure.text: Int
+    get() = when (this) {
+        PairingFailure.NO_NEARBY_PHONE -> R.string.pairing_failed_no_phone
+        PairingFailure.NOT_DIRECTLY_CONNECTED -> R.string.pairing_failed_not_direct
+        PairingFailure.COMMITMENT_MISMATCH -> R.string.pairing_failed_commitment
+        PairingFailure.BAD_CONFIRMATION -> R.string.pairing_failed_confirmation
+    }

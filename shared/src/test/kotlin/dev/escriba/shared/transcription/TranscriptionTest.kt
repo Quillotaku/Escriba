@@ -11,8 +11,8 @@ import kotlin.test.assertTrue
 
 class TimelineTest {
     @Test
-    fun `las posiciones del audio se traducen a hora real saltando los silencios`() {
-        // Dos tramos de voz: 10 s a las 10:00:00 y 5 s a las 10:05:00.
+    fun `audio positions map to real time skipping the silences`() {
+        // Two stretches of speech: 10 s at 10:00:00 and 5 s at 10:05:00.
         val t0 = 1_000_000L
         val timeline = Timeline(listOf(Segment(0, t0, 10_000), Segment(10_000, t0 + 300_000, 5_000)))
         assertEquals(15_000, timeline.totalMs)
@@ -20,7 +20,7 @@ class TimelineTest {
         assertEquals(t0 + 4_000, timeline.wallAt(4_000))
         assertEquals(t0 + 300_000, timeline.wallAt(10_000))
         assertEquals(t0 + 302_500, timeline.wallAt(12_500))
-        assertEquals(t0 + 305_000, timeline.wallAt(20_000)) // más allá del final: el final
+        assertEquals(t0 + 305_000, timeline.wallAt(20_000)) // past the end: the end
     }
 }
 
@@ -28,24 +28,24 @@ class ChunkerTest {
     private fun segs(vararg seconds: Int) = seconds.map { Segment(0, 0, it * 1000L) }
 
     @Test
-    fun `agrupa tramos hasta 30 s cortando en las uniones`() {
-        // 10 + 12 + 6 = 28 s caben; el siguiente de 9 s abre otro bloque.
+    fun `groups stretches up to 30 s cutting at the joins`() {
+        // 10 + 12 + 6 = 28 s fit; the next one of 9 s opens another chunk.
         assertEquals(listOf(0L until 28_000, 28_000L until 37_000), Chunker.plan(segs(10, 12, 6, 9)))
     }
 
     @Test
-    fun `un tramo largo se parte en bloques de 30 s`() {
+    fun `a long stretch is split into 30 s chunks`() {
         assertEquals(listOf(0L until 29_500, 29_500L until 59_000, 59_000L until 70_000), Chunker.plan(segs(70)))
     }
 
     @Test
-    fun `un tramo largo tras otros cierra antes el bloque en la union`() {
-        // 5 s y luego 40 s: el primer bloque acaba a los 5 s; luego 29,5 s y el resto.
+    fun `a long stretch after others closes the chunk at the join first`() {
+        // 5 s then 40 s: the first chunk ends at 5 s; then 29.5 s and the rest.
         assertEquals(listOf(0L until 5_000, 5_000L until 34_500, 34_500L until 45_000), Chunker.plan(segs(5, 40)))
     }
 
     @Test
-    fun `cubre todo el audio sin huecos ni solapes`() {
+    fun `covers all the audio without gaps or overlaps`() {
         val s = segs(3, 25, 2, 31, 8, 8, 8, 8, 60, 1)
         val ranges = Chunker.plan(s)
         assertEquals(0L, ranges.first().first)
@@ -59,7 +59,7 @@ class HallucinationFilterTest {
     private fun s(text: String, nsp: Float = 0.1f) = HallucinationFilter.Input(0, 1000, nsp, text)
 
     @Test
-    fun `quita las alucinaciones tipicas y conserva el texto real`() {
+    fun `removes typical hallucinations and keeps the real text`() {
         val input = listOf(
             s("Hola, ¿qué tal la reunión?"),
             s("Subtítulos realizados por la comunidad de Amara.org"),
@@ -69,6 +69,8 @@ class HallucinationFilterTest {
             s("Vale, vale.", nsp = 0.95f),
             s("Hay que enviar el presupuesto el viernes."),
             s("Hay que enviar el presupuesto el viernes."),
+            s("Thanks for watching!"),
+            s("(applause)"),
         )
         assertEquals(
             listOf("Hola, ¿qué tal la reunión?", "Hay que enviar el presupuesto el viernes."),
@@ -84,20 +86,20 @@ class PcmTest {
     private fun rms(x: FloatArray, from: Int = 200) = sqrt(x.drop(from).dropLast(from).sumOf { it.toDouble() * it } / (x.size - 2 * from))
 
     @Test
-    fun `48 a 16 kHz conserva la voz y elimina lo que no cabe`() {
+    fun `48 to 16 kHz keeps the voice and removes what doesn't fit`() {
         val voice = Pcm.to16k(tone(1_000.0, 48_000, 1.0), 48_000)
         assertEquals(16_000, voice.size)
-        assertTrue(abs(rms(voice) - 0.5 / sqrt(2.0)) < 0.02, "1 kHz debe pasar: ${rms(voice)}")
-        // 12 kHz está por encima de la nueva Nyquist (8 kHz): debe quedar muy atenuado.
+        assertTrue(abs(rms(voice) - 0.5 / sqrt(2.0)) < 0.02, "1 kHz must pass: ${rms(voice)}")
+        // 12 kHz is above the new Nyquist (8 kHz): it must be strongly attenuated.
         val alias = Pcm.to16k(tone(12_000.0, 48_000, 1.0), 48_000)
-        assertTrue(rms(alias) < 0.02, "12 kHz debe filtrarse: ${rms(alias)}")
+        assertTrue(rms(alias) < 0.02, "12 kHz must be filtered: ${rms(alias)}")
     }
 
     @Test
-    fun `normalizar sube el volumen con limite`() {
+    fun `normalizing raises the volume with a limit`() {
         val quiet = FloatArray(100) { if (it == 50) 0.05f else 0.01f }
         val n = Pcm.normalize(quiet)
-        assertEquals(0.6f, n[50], 1e-4f) // ganancia máxima ×12
+        assertEquals(0.6f, n[50], 1e-4f) // maximum gain ×12
         val loud = FloatArray(10) { 0.9f }
         assertTrue(Pcm.normalize(loud) === loud)
     }

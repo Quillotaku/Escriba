@@ -10,11 +10,11 @@ class VoicesTest {
     private fun line(s: Long, e: Long, t: String) = TranscriptLine(s * 1000, e * 1000, t)
 
     @Test
-    fun `merge une los hablantes con poca voz al principal mas parecido`() {
+    fun `merge joins speakers with little speech to the most similar main one`() {
         val turns = listOf(
-            SpeakerTurn(0, 30_000, 0),       // Yo
+            SpeakerTurn(0, 30_000, 0),       // Me
             SpeakerTurn(30_000, 60_000, 1),  // Ana
-            SpeakerTurn(60_000, 65_000, 2),  // Ana con poca voz, justo después de mí
+            SpeakerTurn(60_000, 65_000, 2),  // Ana with little speech, right after me
             SpeakerTurn(65_000, 90_000, 0),
         )
         val r = VoiceMath.merge(
@@ -26,12 +26,12 @@ class VoicesTest {
     }
 
     @Test
-    fun `merge une huellas parecidas y reparte a los hablantes con poca voz`() {
+    fun `merge joins similar voiceprints and spreads out speakers with little speech`() {
         val turns = listOf(
             SpeakerTurn(0, 10_000, 5),       // Ana
             SpeakerTurn(10_000, 20_000, 7),  // Luis
-            SpeakerTurn(20_000, 21_000, 9),  // un segundo suelto: no es un hablante
-            SpeakerTurn(21_000, 30_000, 3),  // Ana otra vez, con otro número
+            SpeakerTurn(20_000, 21_000, 9),  // a stray second: not a speaker
+            SpeakerTurn(21_000, 30_000, 3),  // Ana again, under another number
         )
         val ana = floatArrayOf(1f, 0f, 0f)
         val anaBis = floatArrayOf(0.95f, 0.1f, 0f)
@@ -48,38 +48,38 @@ class VoicesTest {
     }
 
     @Test
-    fun `cada frase toma el hablante con mas solape`() {
+    fun `each sentence takes the speaker with the most overlap`() {
         val turns = listOf(SpeakerTurn(0, 10_000, 0), SpeakerTurn(10_000, 20_000, 1), SpeakerTurn(20_000, 25_000, 0))
-        val lines = listOf(line(1, 9, "hola"), line(9, 14, "qué tal"), line(21, 24, "bien"), line(30, 31, "fuera"))
+        val lines = listOf(line(1, 9, "hello"), line(9, 14, "how are you"), line(21, 24, "fine"), line(30, 31, "outside"))
         val out = VoiceMath.assign(lines, turns) { "S$it" }
         assertEquals(listOf("S0", "S1", "S0", "S0"), out.map { it.speaker })
     }
 
     @Test
-    fun `similitud coseno`() {
+    fun `cosine similarity`() {
         assertEquals(1f, VoiceMath.cosine(floatArrayOf(1f, 2f, 3f), floatArrayOf(2f, 4f, 6f)), 1e-5f)
         assertEquals(0f, VoiceMath.cosine(floatArrayOf(1f, 0f), floatArrayOf(0f, 1f)), 1e-5f)
     }
 
     @Test
-    fun `reconoce voces registradas sin repetirlas y numera el resto`() {
-        val yo = floatArrayOf(1f, 0f, 0f)
+    fun `recognizes enrolled voices without repeating them and numbers the rest`() {
+        val me = floatArrayOf(1f, 0f, 0f)
         val ana = floatArrayOf(0f, 1f, 0f)
         val clusters = mapOf(
             0 to floatArrayOf(0.1f, 0.95f, 0f), // Ana
-            1 to floatArrayOf(0.9f, 0.1f, 0.1f), // yo
-            2 to floatArrayOf(0f, 0.1f, 1f), // desconocido
-            3 to floatArrayOf(0.2f, 0.9f, 0.1f), // parecido a Ana, pero Ana ya está asignada
+            1 to floatArrayOf(0.9f, 0.1f, 0.1f), // me
+            2 to floatArrayOf(0f, 0.1f, 1f), // unknown
+            3 to floatArrayOf(0.2f, 0.9f, 0.1f), // similar to Ana, but Ana is already assigned
         )
-        val names = VoiceMath.identify(clusters, listOf(EnrolledVoice("Yo", yo), EnrolledVoice("Ana López", ana)))
+        val names = VoiceMath.identify(clusters, listOf(EnrolledVoice("Me", me), EnrolledVoice("Ana López", ana)))
         assertEquals("Ana López", names[0])
-        assertEquals("Yo", names[1])
-        assertEquals("Hablante 1", names[2])
-        assertEquals("Hablante 2", names[3])
+        assertEquals("Me", names[1])
+        assertEquals("Speaker 1", names[2])
+        assertEquals("Speaker 2", names[3])
     }
 
     @Test
-    fun `media normalizada de huellas`() {
+    fun `normalized average of voiceprints`() {
         val avg = VoiceMath.average(listOf(floatArrayOf(2f, 0f), floatArrayOf(0f, 4f)))
         assertEquals(0.5f, avg[0], 1e-5f)
         assertEquals(0.5f, avg[1], 1e-5f)

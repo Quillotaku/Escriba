@@ -1,8 +1,8 @@
-// Puente JNI entre Escriba y whisper.cpp.
+// JNI bridge between Escriba and whisper.cpp.
 //
-// Expone lo mínimo: cargar un modelo, transcribir un bloque de PCM float (16 kHz, mono),
-// cancelar y liberar. Los segmentos vuelven como líneas "t0\tt1\tno_speech\ttexto", con los
-// tiempos en milisegundos, para no tener que construir objetos Java desde C++.
+// It exposes the minimum: load a model, transcribe a chunk of float PCM (16 kHz, mono), cancel
+// and release. Segments come back as lines "t0\tt1\tno_speech\ttext", with times in
+// milliseconds, so no Java objects have to be built from C++.
 
 #include <jni.h>
 #include <android/log.h>
@@ -25,8 +25,8 @@ namespace {
 
 std::atomic<bool> g_cancel{false};
 
-// Una app instalada por ADB no puede leer logcat: los mensajes de whisper/ggml se guardan aquí
-// para la pantalla de diagnóstico.
+// An app installed over ADB can't read logcat: whisper/ggml messages are kept here for the
+// diagnostics screen.
 std::mutex g_log_mutex;
 std::string g_log;
 constexpr size_t kLogMax = 16 * 1024;
@@ -50,8 +50,8 @@ std::string to_utf8(JNIEnv *env, jstring s) {
     return out;
 }
 
-// GetStringUTFChars/NewStringUTF usan "UTF-8 modificado": un texto con emojis o caracteres
-// fuera del plano básico rompería NewStringUTF. Se convierte a UTF-16 a mano.
+// GetStringUTFChars/NewStringUTF use "modified UTF-8": text with emoji or characters outside the
+// basic plane would break NewStringUTF. It's converted to UTF-16 by hand.
 jstring from_utf8(JNIEnv *env, const std::string &s) {
     std::u16string out;
     out.reserve(s.size());
@@ -63,7 +63,7 @@ jstring from_utf8(JNIEnv *env, const std::string &s) {
         else if ((c >> 5) == 0x6) { cp = c & 0x1F; len = 2; }
         else if ((c >> 4) == 0xE) { cp = c & 0x0F; len = 3; }
         else if ((c >> 3) == 0x1E) { cp = c & 0x07; len = 4; }
-        else { i++; continue; } // byte inválido: se descarta
+        else { i++; continue; } // invalid byte: dropped
         if (i + len > s.size()) break;
         bool ok = true;
         for (size_t k = 1; k < len; k++) {
@@ -94,9 +94,9 @@ std::string clean(const char *text) {
 
 } // namespace
 
-// El modelo se lee desde un descriptor ya abierto por la app (SAF). Reabrirlo por su ruta
-// (/proc/self/fd/N) no sirve: Android vuelve a comprobar el permiso sobre el archivo real de
-// Descargas y lo deniega, porque Escriba no tiene permiso general de almacenamiento.
+// The model is read from a descriptor the app already opened (SAF). Reopening it by its path
+// (/proc/self/fd/N) doesn't work: Android checks the permission again on the real file in
+// Downloads and denies it, because Escriba has no broad storage permission.
 namespace {
 size_t fd_read(void *ctx, void *out, size_t n) { return fread(out, 1, n, static_cast<FILE *>(ctx)); }
 bool fd_eof(void *ctx) { return feof(static_cast<FILE *>(ctx)) != 0; }
@@ -108,21 +108,21 @@ Java_dev_escriba_nativeml_WhisperNative_nativeInitFd(JNIEnv *, jobject, jint fd,
     static std::once_flag log_once;
     std::call_once(log_once, [] { whisper_log_set(on_log, nullptr); });
 
-    // dup: whisper cierra el FILE al terminar de leer, y el descriptor original es de Java.
+    // dup: whisper closes the FILE when it finishes reading, and the original descriptor belongs to Java.
     FILE *file = fdopen(dup(fd), "rb");
     if (file == nullptr) {
-        LOGE("No se pudo abrir el descriptor %d", fd);
+        LOGE("Couldn't open descriptor %d", fd);
         return 0;
     }
     fseek(file, 0, SEEK_SET);
     whisper_model_loader loader{file, fd_read, fd_eof, fd_close};
 
     whisper_context_params params = whisper_context_default_params();
-    params.use_gpu = false; // en Android la GPU de ggml aún no es fiable; se mide en CPU
+    params.use_gpu = false; // on Android ggml's GPU support isn't reliable yet; CPU only
     params.flash_attn = flash_attn == JNI_TRUE;
     whisper_context *ctx = whisper_init_with_params(&loader, params);
     if (ctx == nullptr) {
-        LOGE("No se pudo cargar el modelo desde el descriptor %d", fd);
+        LOGE("Couldn't load the model from descriptor %d", fd);
         return 0;
     }
     return reinterpret_cast<jlong>(ctx);
@@ -149,7 +149,7 @@ Java_dev_escriba_nativeml_WhisperNative_nativeLog(JNIEnv *env, jobject) {
     return from_utf8(env, g_log);
 }
 
-// Tiempos de la última transcripción, en ms: "codificador,decodificador,lotes,prompt,muestreo".
+// Timings of the last transcription, in ms: "encoder,decoder,batch,prompt,sampling".
 extern "C" JNIEXPORT jstring JNICALL
 Java_dev_escriba_nativeml_WhisperNative_nativeTimings(JNIEnv *env, jobject, jlong handle) {
     auto *ctx = reinterpret_cast<whisper_context *>(handle);
@@ -185,13 +185,13 @@ Java_dev_escriba_nativeml_WhisperNative_nativeTranscribe(
     params.print_realtime = false;
     params.print_special = false;
     params.print_timestamps = false;
-    params.no_context = true;     // cada bloque es independiente: evita arrastrar errores entre fragmentos
+    params.no_context = true;     // each chunk is independent: avoids carrying errors across chunks
     params.suppress_blank = true;
     params.initial_prompt = initial.empty() ? nullptr : initial.c_str();
     if (beam_size > 1) params.beam_search.beam_size = beam_size;
     if (fast == JNI_TRUE) {
         params.greedy.best_of = 1;
-        params.temperature_inc = 0.0f; // sin reintentos con temperatura más alta
+        params.temperature_inc = 0.0f; // no retries at a higher temperature
     }
     params.abort_callback = should_abort;
     params.abort_callback_user_data = nullptr;
@@ -199,9 +199,9 @@ Java_dev_escriba_nativeml_WhisperNative_nativeTranscribe(
     g_cancel.store(false);
     whisper_reset_timings(ctx);
     const int rc = whisper_full(ctx, params, samples.data(), n);
-    whisper_print_timings(ctx); // al registro: desglose completo para el diagnóstico
+    whisper_print_timings(ctx); // to the log: full breakdown for diagnostics
     if (rc != 0) {
-        LOGE("whisper_full devolvió %d", rc);
+        LOGE("whisper_full returned %d", rc);
         return nullptr;
     }
 
@@ -209,7 +209,7 @@ Java_dev_escriba_nativeml_WhisperNative_nativeTranscribe(
     jclass string_class = env->FindClass("java/lang/String");
     jobjectArray out = env->NewObjectArray(segments, string_class, nullptr);
     for (int i = 0; i < segments; i++) {
-        // whisper devuelve los tiempos en centésimas de segundo.
+        // whisper returns times in hundredths of a second.
         const int64_t t0 = whisper_full_get_segment_t0(ctx, i) * 10;
         const int64_t t1 = whisper_full_get_segment_t1(ctx, i) * 10;
         const float no_speech = whisper_full_get_segment_no_speech_prob(ctx, i);

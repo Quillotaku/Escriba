@@ -1,120 +1,122 @@
 # Escriba
 
-**Graba en el reloj, transcribe y resume en el móvil, guarda en tu bóveda de Obsidian.**
+**Record on the watch, transcribe and summarize on the phone, keep it in your Obsidian vault.**
 
-Escriba convierte un reloj Wear OS y un móvil Android en una grabadora de conversaciones al estilo
-de Plaud, pero **todo en local**: el reloj graba, el móvil transcribe con Whisper o Parakeet,
-distingue quién habla, resume con un LLM y escribe cada conversación como una nota de Obsidian con
-su resumen, decisiones, tareas y transcripción. Sin Internet, sin cuentas y sin nube.
+Escriba turns a Wear OS watch and an Android phone into a Plaud-style conversation recorder, but
+**everything is local**: the watch records, the phone transcribes with Whisper or Parakeet, tells
+who's speaking, summarizes with an LLM and writes each conversation as an Obsidian note with its
+summary, decisions, tasks and transcript. No Internet, no accounts and no cloud.
 
-> Versión 1.0.0 · Android 15+ (arm64) y Wear OS 5+ · Interfaz en español
+> Version 1.0.0 · Android 15+ (arm64) and Wear OS 5+ · English interface
 
-## Qué hace
+## What it does
 
-- **Graba desde la muñeca**: botón de la app del reloj, Tile o complicación. Modo continuo con
-  horario (por defecto 07:30–23:30) o bajo demanda. Detector de voz: solo se guarda lo que tiene voz.
-- **Envía al móvil cifrado de extremo a extremo** por Bluetooth (Wearable Data Layer, solo a
-  dispositivos conectados directamente; nunca por la nube).
-- **Transcribe en el móvil** con whisper.cpp (`large-v3-turbo`) o con Parakeet TDT v3 (unas 10
-  veces más rápido).
-- **Separa hablantes y reconoce voces** que registres («Yo», «Ana López»…). Las huellas de voz
-  solo viven en la base de datos privada del móvil.
-- **Resume con un LLM local** (Gemma 3 4B por defecto): título, resumen, decisiones, tareas con
-  responsable y fecha, y enlaces a personas, proyectos y clientes que ya existan en tu bóveda.
-- **Escribe notas de Obsidian** con frontmatter para Dataview, una por conversación (se parten
-  por silencios), y enlaza la nota diaria.
-- **Perfiles** (trabajo, un cliente, ideas…) como archivos de la bóveda, con herencia, editables
-  desde Obsidian o desde la app.
-- **Panel** con el tiempo grabado por perfil, las tareas y el uso de los modelos.
+- **Records from the wrist**: the watch app's button, the Tile or the complication. Continuous mode
+  with a schedule (07:30–23:30 by default) or on demand. Speech detector: only what has speech is
+  kept.
+- **Sends to the phone end-to-end encrypted** over Bluetooth (Wearable Data Layer, only to directly
+  connected devices; never through the cloud).
+- **Transcribes on the phone** with whisper.cpp (`large-v3-turbo`) or Parakeet TDT v3 (about 10
+  times faster).
+- **Separates speakers and recognizes the voices** you enroll ("Me", "Ana López"…). Voiceprints only
+  live in the phone's private database.
+- **Summarizes with a local LLM** (Gemma 3 4B by default): title, summary, decisions, tasks with
+  owner and due date, and links to people, projects and clients that already exist in your vault.
+  It writes in the language of the conversation.
+- **Writes Obsidian notes** with Dataview-ready frontmatter, one per conversation (split by
+  silences), and links them from the daily note.
+- **Profiles** (work, a client, ideas…) as vault files, with inheritance, editable from Obsidian or
+  from the app.
+- **Dashboard** with recorded time per profile, tasks and model usage.
 
-## Privacidad
+## Privacy
 
-- Ninguna de las dos apps tiene permiso de Internet.
-- Reloj y móvil se emparejan con un código de 6 dígitos (ECDH P-256 con compromiso) y todo lo que
-  viaja entre ellos va cifrado con AES-256-GCM. La clave está protegida por el Android Keystore.
-- Las copias de seguridad de Android están desactivadas.
-- El audio se borra del móvil a los 7 días de escribir la nota (configurable) y, si el perfil lo
-  guarda en la bóveda, a los días que diga el perfil.
+- Neither app has the Internet permission.
+- Watch and phone pair with a 6-digit code (P-256 ECDH with a commitment) and everything that
+  travels between them is encrypted with AES-256-GCM. The key is protected by the Android Keystore.
+- Android backups are disabled.
+- Audio is deleted from the phone 7 days after the note is written (configurable) and, if the
+  profile saves it in the vault, after the days the profile says.
 
-Más detalle en [`docs/seguridad.md`](docs/seguridad.md).
+More detail in [`docs/security.md`](docs/security.md).
 
-## Requisitos
+## Requirements
 
-| | Mínimo | Probado con |
+| | Minimum | Tested with |
 |---|---|---|
-| Móvil | Android 15 (API 35), arm64, 8 GB de RAM | Honor Magic 8 Pro (Android 16, MagicOS, 12 GB) |
-| Reloj | Wear OS 5 (API 34) con micrófono | Xiaomi Watch 5 (Wear OS 6, HyperOS) |
-| Obsidian | Cualquier versión; el plugin Dataview para la nota diaria | Sincronización con YAOS (cualquier otra vale) |
-| Espacio | ~4 GB para los modelos recomendados | |
+| Phone | Android 15 (API 35), arm64, 8 GB of RAM | Honor Magic 8 Pro (Android 16, MagicOS, 12 GB) |
+| Watch | Wear OS 5 (API 34) with a microphone | Xiaomi Watch 5 (Wear OS 6, HyperOS) |
+| Obsidian | Any version; the Dataview plugin for the daily note | Any sync tool works |
+| Storage | ~4 GB for the recommended models | |
 
-Rendimiento medido en el Honor Magic 8 Pro: Whisper `large-v3-turbo-q8_0` transcribe a ×0,26–0,31
-del tiempo real (una hora de voz en unos 16–19 min), Parakeet a ×0,03 y Gemma 3 4B lee unos 64
-tokens/s y escribe unos 15 tokens/s.
+Performance measured on the Honor Magic 8 Pro: Whisper `large-v3-turbo-q8_0` transcribes at
+×0.26–0.31 of real time (an hour of speech in about 16–19 min), Parakeet at ×0.03, and Gemma 3 4B
+reads about 64 tokens/s and writes about 15 tokens/s.
 
-## Instalación
+## Installation
 
-Todavía no hay APK publicadas: se compilan desde el código.
+There are no published APKs yet: they're built from source.
 
-### 1. Herramientas
+### 1. Tools
 
-- **Android Studio** reciente (su JDK, el JBR, es el que se usa para compilar).
-- **Android SDK 37**, **NDK 30.0.16248370** y **CMake 4.1.2** (SDK Manager → SDK Tools).
-- **git** y **adb** (viene con el SDK).
+- A recent **Android Studio** (its JDK, the JBR, is the one used to build).
+- **Android SDK 37**, **NDK 30.0.16248370** and **CMake 4.1.2** (SDK Manager → SDK Tools).
+- **git** and **adb** (it comes with the SDK).
 
-### 2. Código
+### 2. Code
 
 ```bash
-git clone --recurse-submodules <url-del-repositorio> escriba
+git clone --recurse-submodules <repository-url> escriba
 cd escriba
 ```
 
-whisper.cpp y llama.cpp son submódulos (`native/whisper.cpp`, `native/llama.cpp`). Si clonaste sin
-`--recurse-submodules`:
+whisper.cpp and llama.cpp are submodules (`native/whisper.cpp`, `native/llama.cpp`). If you cloned
+without `--recurse-submodules`:
 
 ```bash
 git submodule update --init --recursive
 ```
 
-### 3. Compilar
+### 3. Build
 
 ```bash
 ./gradlew :mobile:assembleRelease :wear:assembleRelease
 ```
 
-La primera vez Gradle descarga el AAR de sherpa-onnx de sus *releases* oficiales y comprueba su
-SHA-256 (tarea `:mobile:descargarSherpaOnnx`).
+The first time, Gradle downloads the sherpa-onnx AAR from its official releases and checks its
+SHA-256 (the `:mobile:downloadSherpaOnnx` task).
 
-Las dos apps se firman con la clave de depuración **a propósito**: la Data Layer solo comunica apps
-con el mismo id (`dev.escriba`) y la misma firma. Si las firmas con tu propia clave, firma las dos
-con la misma.
+Both apps are signed with the debug key **on purpose**: the Data Layer only connects apps with the
+same id (`dev.escriba`) and the same signature. If you sign them with your own key, sign both with
+the same one.
 
-### 4. Instalar
+### 4. Install
 
-Activa la depuración por Wi-Fi en el móvil y en el reloj (Opciones de desarrollador) y:
+Turn on wireless debugging on the phone and the watch (Developer options) and:
 
 ```bash
-adb -s <móvil> install -r mobile/build/outputs/apk/release/mobile-release.apk
-adb -s <reloj> install -r wear/build/outputs/apk/release/wear-release.apk
+adb -s <phone> install -r mobile/build/outputs/apk/release/mobile-release.apk
+adb -s <watch> install -r wear/build/outputs/apk/release/wear-release.apk
 ```
 
-## Los modelos
+## The models
 
-Los modelos no van dentro de la app: se dejan en una carpeta del móvil (p. ej. `Download/models`)
-y se elige esa carpeta en la app. Los archivos deben tener **exactamente** estos nombres.
+The models don't go inside the app: they're left in a folder on the phone (e.g. `Download/models`)
+and that folder is chosen in the app. The files must have **exactly** these names.
 
-| Para qué | Archivo | Tamaño | Descarga |
+| What for | File | Size | Download |
 |---|---|---|---|
-| Transcripción (recomendado) | `ggml-large-v3-turbo-q8_0.bin` | 833 MB | [whisper.cpp en Hugging Face](https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q8_0.bin) |
-| Transcripción (más ligero) | `ggml-large-v3-turbo-q5_0.bin` | 547 MB | [whisper.cpp en Hugging Face](https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin) |
-| Resumen (recomendado) | `gemma-3-4b-it-Q4_K_M.gguf` | 2,4 GB | [unsloth/gemma-3-4b-it-GGUF](https://huggingface.co/unsloth/gemma-3-4b-it-GGUF/resolve/main/gemma-3-4b-it-Q4_K_M.gguf) |
-| Resumen (alternativa) | `Qwen3-4B-Instruct-2507-Q4_K_M.gguf` | 2,4 GB | [unsloth/Qwen3-4B-Instruct-2507-GGUF](https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q4_K_M.gguf) |
-| Parakeet (opcional) | 4 archivos, ver abajo | 640 MB | [sherpa-onnx: parakeet-tdt-0.6b-v3-int8](https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2) |
-| Quién habla (opcional) | `pyannote-segmentation-3-0.onnx` | 6 MB | [sherpa-onnx: pyannote-segmentation-3-0](https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2) |
-| Quién habla (opcional) | `3dspeaker_speech_eres2net_sv_en_voxceleb_16k.onnx` | 25 MB | [sherpa-onnx: 3D-Speaker](https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_eres2net_sv_en_voxceleb_16k.onnx) |
+| Transcription (recommended) | `ggml-large-v3-turbo-q8_0.bin` | 833 MB | [whisper.cpp on Hugging Face](https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q8_0.bin) |
+| Transcription (lighter) | `ggml-large-v3-turbo-q5_0.bin` | 547 MB | [whisper.cpp on Hugging Face](https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin) |
+| Summary (recommended) | `gemma-3-4b-it-Q4_K_M.gguf` | 2.4 GB | [unsloth/gemma-3-4b-it-GGUF](https://huggingface.co/unsloth/gemma-3-4b-it-GGUF/resolve/main/gemma-3-4b-it-Q4_K_M.gguf) |
+| Summary (alternative) | `Qwen3-4B-Instruct-2507-Q4_K_M.gguf` | 2.4 GB | [unsloth/Qwen3-4B-Instruct-2507-GGUF](https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q4_K_M.gguf) |
+| Parakeet (optional) | 4 files, see below | 640 MB | [sherpa-onnx: parakeet-tdt-0.6b-v3-int8](https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2) |
+| Who speaks (optional) | `pyannote-segmentation-3-0.onnx` | 6 MB | [sherpa-onnx: pyannote-segmentation-3-0](https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2) |
+| Who speaks (optional) | `3dspeaker_speech_eres2net_sv_en_voxceleb_16k.onnx` | 25 MB | [sherpa-onnx: 3D-Speaker](https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_eres2net_sv_en_voxceleb_16k.onnx) |
 
-Hay que **renombrar** lo que viene dentro de los comprimidos de sherpa-onnx:
+What comes inside the sherpa-onnx archives has to be **renamed**:
 
-| Dentro del comprimido | Nombre en la carpeta de modelos |
+| Inside the archive | Name in the models folder |
 |---|---|
 | `encoder.int8.onnx` | `parakeet-tdt-0.6b-v3-encoder.int8.onnx` |
 | `decoder.int8.onnx` | `parakeet-tdt-0.6b-v3-decoder.int8.onnx` |
@@ -122,84 +124,85 @@ Hay que **renombrar** lo que viene dentro de los comprimidos de sherpa-onnx:
 | `tokens.txt` | `parakeet-tdt-0.6b-v3-tokens.txt` |
 | `model.onnx` (pyannote) | `pyannote-segmentation-3-0.onnx` |
 
-Copia la carpeta al móvil, por ejemplo con `adb push models /sdcard/Download/models`. Cada modelo
-tiene su licencia (Gemma tiene sus propios términos de uso): revísala antes de usarlo.
+Copy the folder to the phone, for example with `adb push models /sdcard/Download/models`. Each model
+has its own license (Gemma has its own terms of use): check it before using it.
 
-## Primeros pasos
+## Getting started
 
-1. **Abre Escriba en el móvil.** El tour de inicio te lleva por todo: elegir la carpeta de la bóveda
-   (crea la configuración que falte sin sobrescribir nada), la carpeta de modelos (dice qué
-   encuentra y qué falta), emparejar el reloj, las notificaciones y la batería. Se repite desde
-   Ajustes → Tour de inicio.
-2. **Empareja el reloj.** Abre Escriba en el reloj → Móvil → Emparejar. Comprueba que los dos
-   muestran el mismo código y confirma en los dos.
-3. **Que el sistema no cierre Escriba.** Exclúyela de la optimización de batería en el móvil y en el
-   reloj. En MagicOS, además: Ajustes → Batería → Inicio de aplicaciones → Escriba → desactiva
-   «Gestionar automáticamente» y activa las tres opciones (en Ajustes → Batería de la app está la guía).
-4. **Graba.** Desde el botón de la app del reloj, el Tile (los perfiles favoritos como botones) o la
-   complicación. Al acabar, el móvil procesa la sesión y la nota aparece en la bóveda. Las sesiones
-   de más de 10 minutos de voz esperan a que el móvil esté cargando, salvo que pulses «Procesar ahora».
+1. **Open Escriba on the phone.** The welcome tour takes you through everything: choosing the vault
+   folder (it creates whatever configuration is missing without overwriting anything), the models
+   folder (it says what it finds and what's missing), pairing the watch, notifications and battery.
+   It can be repeated from Settings → Welcome tour.
+2. **Pair the watch.** Open Escriba on the watch → Phone → Pair. Check that both show the same code
+   and confirm on both.
+3. **Don't let the system close Escriba.** Exempt it from battery optimization on the phone and the
+   watch. On MagicOS, also: Settings → Battery → App launch → Escriba → turn off "Manage
+   automatically" and turn on all three options (the app's Settings → Battery has the guide).
+4. **Record.** From the watch app's button, the Tile (favourite profiles as buttons) or the
+   complication. When it ends, the phone processes the session and the note shows up in the vault.
+   Sessions with more than 10 minutes of speech wait for the phone to be charging, unless you tap
+   "Process now".
 
-## Configuración en la bóveda
+## Configuration in the vault
 
-Todo vive en `_config/escriba/` dentro de tu bóveda. Son notas de Markdown con frontmatter (la vista
-de Propiedades de Obsidian sirve para editarlas). Si algo está mal escrito, Escriba lo explica en
-`_config/escriba/errores.md` y en la app, y usa el valor por defecto.
+Everything lives in `_config/escriba/` inside your vault. They're Markdown notes with frontmatter
+(Obsidian's Properties view works to edit them). If something is misspelled, Escriba explains it in
+`_config/escriba/errors.md` and in the app, and uses the default value.
 
-### `escriba.md` (ajustes globales)
+### `escriba.md` (global settings)
 
-| Propiedad | Por defecto | Qué hace |
+| Property | Default | What it does |
 |---|---|---|
-| `horario` | `07:30-23:30` | Franja en la que graba el modo continuo |
-| `zona_horaria` | `Europe/Madrid` | Para las horas de las notas |
-| `perfil_por_defecto` | `casual` | Perfil al empezar a grabar sin elegir |
-| `whisper_por_defecto` | `large-v3-turbo-q8_0` | Modelo de Whisper si el perfil no dice otro |
-| `llm_por_defecto` | `gemma-3-4b-it-Q4_K_M` | LLM si el perfil no dice otro |
-| `nota_diaria_carpeta` / `nota_diaria_formato` | `Diario` / `YYYY-MM-DD` | Dónde está tu nota diaria (`YYYY-MM-DD` o `DD-MM-YYYY`) |
-| `carpeta_personas`, `carpeta_proyectos`, `carpeta_clientes` | `Personas`, `Proyectos`, `Clientes` | Dónde buscar notas a las que enlazar |
-| `carpeta_adjuntos` | `Adjuntos/Escriba` | Dónde va el audio que se guarda en la bóveda |
-| `retencion_audio_movil` | `7d` | Días que el audio se queda en el móvil tras escribir la nota |
+| `schedule` | `07:30-23:30` | Window in which continuous mode records |
+| `time_zone` | `Europe/Madrid` | For the times in the notes |
+| `default_profile` | `personal` | Profile used when recording without choosing one |
+| `default_whisper` | `large-v3-turbo-q8_0` | Whisper model if the profile doesn't say otherwise |
+| `default_llm` | `gemma-3-4b-it-Q4_K_M` | LLM if the profile doesn't say otherwise |
+| `daily_note_folder` / `daily_note_format` | `Daily` / `YYYY-MM-DD` | Where your daily note is (`YYYY-MM-DD` or `DD-MM-YYYY`) |
+| `people_folder`, `projects_folder`, `clients_folder` | `People`, `Projects`, `Clients` | Where to look for notes to link to |
+| `attachments_folder` | `Attachments/Escriba` | Where audio saved in the vault goes |
+| `phone_audio_retention` | `7d` | Days the audio stays on the phone after the note is written |
 
-### `perfiles/<id>.md` (un archivo por perfil)
+### `profiles/<id>.md` (one file per profile)
 
-| Propiedad | Ejemplo | Qué hace |
+| Property | Example | What it does |
 |---|---|---|
-| `nombre`, `color`, `icono`, `favorito` | `Trabajo`, `"#2E7D32"`, `maletin`, `true` | Cómo se ve en el reloj y en la app (los favoritos van al Tile) |
-| `hereda` | `trabajo` | Toma todo de otro perfil; aquí solo lo distinto |
-| `modo` | `continuo` / `bajo_demanda` | Graba todo el horario o solo cuando pulsas |
-| `vad` | `baja` / `media` / `alta` | Sensibilidad del detector de voz |
-| `separar_tras_silencio` | `15m` | Silencio que separa dos conversaciones (dos notas) |
-| `carpeta`, `plantilla` | `Trabajo/{{yyyy}}/{{MM}}` | Dónde se escriben las notas y con qué plantilla |
-| `motor`, `whisper`, `llm` | `parakeet`, `large-v3-turbo-q8_0`, `gemma-3-4b-it-Q4_K_M` | Modelos de este perfil |
-| `idioma`, `vocabulario` | `es`, `[Kubernetes, "SAP S/4"]` | Idioma (`es`, `en`, `auto`) y palabras que Whisper debe reconocer |
-| `diarizacion` | `true` | Separar quién habla |
-| `tareas`, `descartar_triviales` | `true` | Extraer tareas; no escribir nota de lo trivial |
-| `enlazar` | `[personas, proyectos, clientes]` | A qué notas existentes enlazar |
-| `cliente` | `"[[Acme]]"` | Cliente de este perfil |
-| `guardar_audio`, `retencion_audio` | `true`, `90d` / `siempre` | Guardar el audio junto a la nota y cuánto tiempo |
-| `redondeo` | `1m` / `5m` | Redondeo de la duración (por defecto, al minuto más cercano) |
-| `nota_diaria` | `dataview` / `enlace` / `ninguna` | Cómo aparece en la nota diaria |
+| `name`, `color`, `icon`, `favorite` | `Work`, `"#2E7D32"`, `briefcase`, `true` | How it looks on the watch and in the app (favourites go to the Tile) |
+| `inherits` | `work` | Takes everything from another profile; only what's different goes here |
+| `mode` | `continuous` / `on_demand` | Records the whole schedule or only when you tap |
+| `vad` | `low` / `medium` / `high` | Speech detector sensitivity |
+| `split_after_silence` | `15m` | Silence that separates two conversations (two notes) |
+| `folder`, `template` | `Work/{{yyyy}}/{{MM}}` | Where the notes are written and with which template |
+| `engine`, `whisper`, `llm` | `parakeet`, `large-v3-turbo-q8_0`, `gemma-3-4b-it-Q4_K_M` | This profile's models |
+| `language`, `vocabulary` | `auto`, `[Kubernetes, "SAP S/4"]` | Language (`auto`, `en`, `es`) and words Whisper should recognize |
+| `diarization` | `true` | Separate who speaks |
+| `tasks`, `discard_trivial` | `true` | Extract tasks; don't write a note for trivial conversations |
+| `link` | `[people, projects, clients]` | Which existing notes to link to |
+| `client` | `"[[Acme]]"` | This profile's client |
+| `save_audio`, `audio_retention` | `true`, `90d` / `forever` | Save the audio next to the note, and for how long |
+| `rounding` | `1m` / `5m` | Duration rounding (to the nearest minute by default) |
+| `daily_note` | `dataview` / `link` / `none` | How it shows up in the daily note |
 
-El cuerpo del perfil, bajo `## Prompt`, son las instrucciones para el resumen. Un perfil hijo sin
-`## Prompt` hereda el del padre.
+The profile's body, under `## Prompt`, holds the instructions for the summary. A child profile with
+no `## Prompt` inherits its parent's.
 
-## Desarrollo
+## Development
 
-### Estructura
+### Structure
 
-| Módulo | Qué es |
+| Module | What it is |
 |---|---|
-| `shared` | Kotlin puro (JVM): contrato reloj ↔ móvil, cifrado, Ogg/Opus, detector de voz, perfiles, notas, LLM, voces. Aquí va toda la lógica que se puede probar sin Android. |
-| `datalayer` | Enlace por la Wearable Data Layer: emparejamiento, mensajes cifrados, registro. |
-| `native` | whisper.cpp con un puente JNI propio. |
-| `llm` | llama.cpp con un puente JNI propio. |
-| `wear` | App del reloj: grabación, almacenamiento de fragmentos, envío, Tile, complicación. |
-| `mobile` | App del móvil: recepción, Room, transcripción, diarización, resumen, notas, interfaz. |
+| `shared` | Pure Kotlin (JVM): the watch ↔ phone contract, encryption, Ogg/Opus, speech detector, profiles, notes, LLM, voices. All the logic that can be tested without Android goes here. |
+| `datalayer` | The Wearable Data Layer link: pairing, encrypted messages, log. |
+| `native` | whisper.cpp with our own JNI bridge. |
+| `llm` | llama.cpp with our own JNI bridge. |
+| `wear` | The watch app: recording, fragment storage, sending, Tile, complication. |
+| `mobile` | The phone app: inbox, Room, transcription, diarization, summary, notes, UI. |
 
-La arquitectura y las decisiones de cada fase están en [`docs/arquitectura.md`](docs/arquitectura.md);
-el estudio de alternativas, en [`docs/alternativas.md`](docs/alternativas.md). El sistema de diseño
-(colores, tipografía, componentes) está documentado aparte y se aplica con `EscribaTheme` en el
-móvil y `EscribaWearTheme` en el reloj.
+The architecture and each phase's decisions are in [`docs/architecture.md`](docs/architecture.md);
+the study of alternatives, in [`docs/alternatives.md`](docs/alternatives.md). The design system
+(colours, typography, components) is documented separately and applied with `EscribaTheme` on the
+phone and `EscribaWearTheme` on the watch.
 
 ### Tests
 
@@ -207,50 +210,52 @@ móvil y `EscribaWearTheme` en el reloj.
 ./gradlew :shared:test :mobile:testDebugUnitTest
 ```
 
-Todo corre en el PC (JUnit y Robolectric). **No ejecutes `connectedAndroidTest` en tu móvil de
-uso diario**: desinstala la app al terminar y borra la base de datos, el audio pendiente y el
-emparejamiento. Detalles en [`docs/testing.md`](docs/testing.md).
+Everything runs on the PC (JUnit and Robolectric). **Don't run `connectedAndroidTest` on the phone
+you use every day**: it uninstalls the app when it finishes and wipes the database, the pending
+audio and the pairing. Details in [`docs/testing.md`](docs/testing.md).
 
-### Pautas
+### Guidelines
 
-- **Código propio.** No se copia código de otras apps ni de ejemplos; las librerías se usan como
-  dependencias.
-- **Privacidad ante todo.** Nada de permiso de Internet, nada de `DataClient` (sincroniza por la
-  nube), nada que salga del móvil salvo a la bóveda. Todo lo nuevo que viaje entre reloj y móvil va
-  cifrado (`sendSealed`).
-- **Español** en la interfaz, los comentarios y los mensajes de commit.
-- **La base de datos** exporta sus esquemas a `mobile/schemas`. Una migración nueva va en
-  `EscribaDb.MIGRATIONS` y con su caso en `MigrationTest`.
-- **Release y R8.** Lo que el sistema lee por nombre (como `android_wear_capabilities`) se conserva
-  en `res/raw/keep.xml`; lo que el código nativo lee por nombre, en `proguard-rules.pro`. Después de
-  tocar la configuración de release, comprueba que móvil y reloj siguen emparejándose.
+- **Original code.** No code is copied from other apps or samples; libraries are used as
+  dependencies.
+- **Privacy first.** No Internet permission, no `DataClient` (it syncs through the cloud), nothing
+  leaves the phone except to the vault. Anything new that travels between watch and phone is
+  encrypted (`sendSealed`).
+- **English** in the code, the comments, the documentation and the commit messages. The UI texts
+  live in `strings.xml` (ready for translations); logs are plain English text.
+- **The database** exports its schemas to `mobile/schemas`. A new migration goes in
+  `EscribaDb.MIGRATIONS`, with its case in `MigrationTest`.
+- **Release and R8.** What the system reads by name (like `android_wear_capabilities`) is kept in
+  `res/raw/keep.xml`; what native code reads by name, in `proguard-rules.pro`. After touching the
+  release configuration, check that the phone and the watch still pair.
 
-### Abrir un issue
+### Opening an issue
 
-Incluye:
+Include:
 
-1. Modelo y versión de Android del móvil y del reloj, y versión de Escriba (Ajustes del sistema →
-   Aplicaciones → Escriba).
-2. Qué hiciste, qué esperabas y qué pasó.
-3. El registro: en el móvil, Ajustes → Registro; en el reloj, Diagnóstico → Registro. **Revísalo
-   antes de pegarlo**: puede contener nombres de archivo de tu bóveda.
-4. Si es de transcripción o resumen, qué modelo y qué perfil (sin el contenido de la conversación).
+1. Model and Android version of the phone and the watch, and Escriba's version (system Settings →
+   Apps → Escriba).
+2. What you did, what you expected and what happened.
+3. The log: on the phone, Settings → Log; on the watch, Diagnostics → Log. **Review it before
+   pasting it**: it may contain file names from your vault.
+4. If it's about transcription or summaries, which model and which profile (without the
+   conversation's content).
 
-### Contribuir con un fork
+### Contributing with a fork
 
-1. Haz un fork y crea una rama desde `main` (`git checkout -b arregla-tal-cosa`).
-2. Haz los cambios con sus tests (`shared` o `mobile/src/test`) y comprueba que todo pasa.
-3. Compila las dos apps en release y pruébalas emparejadas en dispositivos reales si tocas el enlace,
-   la grabación o la interfaz.
-4. Abre un pull request explicando el qué y el porqué; si cambia la interfaz, con capturas.
+1. Fork the repository and create a branch from `main` (`git checkout -b fix-something`).
+2. Make the changes with their tests (`shared` or `mobile/src/test`) and check that everything passes.
+3. Build both apps in release and test them paired on real devices if you touch the link, recording
+   or the UI.
+4. Open a pull request explaining what and why; if the UI changes, with screenshots.
 
-## Créditos
+## Credits
 
-- [whisper.cpp](https://github.com/ggml-org/whisper.cpp) y [llama.cpp](https://github.com/ggml-org/llama.cpp) (MIT).
-- [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) (Apache-2.0): Parakeet, diarización y huellas de voz.
-- Fuentes [Literata](https://github.com/googlefonts/literata) y [Atkinson Hyperlegible Next y Mono](https://www.brailleinstitute.org/freefont/) (SIL Open Font License; licencias en [`docs/licencias`](docs/licencias)).
-- Los modelos (Whisper, Gemma, Qwen, Parakeet, pyannote, 3D-Speaker) tienen sus propias licencias.
+- [whisper.cpp](https://github.com/ggml-org/whisper.cpp) and [llama.cpp](https://github.com/ggml-org/llama.cpp) (MIT).
+- [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) (Apache-2.0): Parakeet, diarization and voiceprints.
+- The [Literata](https://github.com/googlefonts/literata) and [Atkinson Hyperlegible Next and Mono](https://www.brailleinstitute.org/freefont/) fonts (SIL Open Font License; licenses in [`docs/licenses`](docs/licenses)).
+- The models (Whisper, Gemma, Qwen, Parakeet, pyannote, 3D-Speaker) have their own licenses.
 
-## Licencia
+## License
 
-Pendiente de elegir.
+To be chosen.

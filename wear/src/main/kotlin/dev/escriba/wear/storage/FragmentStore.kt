@@ -12,7 +12,7 @@ import java.io.FileOutputStream
 import java.io.RandomAccessFile
 import java.security.MessageDigest
 
-/** Metadatos de una sesión de grabación en el reloj. */
+/** Metadata of a recording session on the watch. */
 @Serializable
 data class SessionMeta(
     val sessionId: String,
@@ -23,22 +23,22 @@ data class SessionMeta(
     val mode: String,
     val endMs: Long? = null,
     val totalFragments: Int? = null,
-    /** El móvil confirmó que sabe que la sesión terminó. */
+    /** The phone confirmed it knows the session ended. */
     val endAcked: Boolean = false,
 )
 
 /**
- * Almacén de fragmentos en el reloj, basado en archivos (sin base de datos):
+ * File-based fragment store on the watch (no database):
  *
  * ```
- * fragments/<sesion>/session.json
- *                   /<seq>.ogg.part + <seq>.journal   ← fragmento abierto
- *                   /<seq>.ogg + <seq>.json           ← fragmento cerrado, pendiente de envío
+ * fragments/<session>/session.json
+ *                    /<seq>.ogg.part + <seq>.journal   ← open fragment
+ *                    /<seq>.ogg + <seq>.json           ← closed fragment, waiting to be sent
  * ```
  *
- * Cada cambio de estado es un renombrado o una escritura atómica (temporal + rename), así
- * que un corte en cualquier momento deja el almacén en un estado coherente y recuperable.
- * Los fragmentos se borran solo cuando el móvil confirma que los ha recibido (fase 3).
+ * Every state change is a rename or an atomic write (temp file + rename), so a cut at any moment
+ * leaves the store in a consistent, recoverable state. Fragments are only deleted once the phone
+ * confirms it received them.
  */
 class FragmentStore(private val root: File, private val sampleRate: Int, private val bitrate: Int) {
 
@@ -65,12 +65,12 @@ class FragmentStore(private val root: File, private val sampleRate: Int, private
         return OpusFragmentWriter(File(dir, "$seq$PART"), File(dir, "$seq$JOURNAL"), sampleRate, bitrate)
     }
 
-    /** Pasa un fragmento abierto a cerrado y devuelve su cabecera definitiva. */
+    /** Turns an open fragment into a closed one and returns its final header. */
     fun commit(session: SessionMeta, closed: ClosedFragment): FragmentHeader {
         val dir = sessionDir(session.sessionId)
         val part = File(dir, "${closed.seq}$PART")
         val ogg = File(dir, "${closed.seq}$OGG")
-        check(part.renameTo(ogg)) { "No se pudo renombrar ${part.name}" }
+        check(part.renameTo(ogg)) { "Couldn't rename ${part.name}" }
         val header = FragmentHeader(
             sessionId = session.sessionId,
             seq = closed.seq,
@@ -92,18 +92,18 @@ class FragmentStore(private val root: File, private val sampleRate: Int, private
     }
 
     /**
-     * Recupera lo que dejó a medias un proceso anterior: cierra los `.part` truncándolos a la
-     * última página Ogg válida y reconstruyendo sus segmentos, y cierra las sesiones sin final.
-     * Solo debe llamarse cuando no hay ninguna grabación en curso.
+     * Recovers what a previous process left half done: closes the `.part` files, truncating them
+     * to the last valid Ogg page and rebuilding their segments, and closes sessions with no end.
+     * It must only be called when no recording is in progress.
      */
     fun recover(): Int {
         var recovered = 0
         sessionDirs().forEach { dir ->
             val session = readSession(dir.name)
             if (session == null) {
-                // Sesión que murió antes de escribir sus metadatos: sin ellos no hay cabeceras posibles.
+                // A session that died before writing its metadata: without it no headers are possible.
                 val audio = dir.listFiles { f -> f.name.endsWith(OGG) || f.name.endsWith(PART) }.orEmpty()
-                if (audio.isEmpty()) dir.deleteRecursively() else AppLog.e(TAG, "Sesión ${dir.name.take(8)} sin session.json con ${audio.size} audios; se conserva")
+                if (audio.isEmpty()) dir.deleteRecursively() else AppLog.e(TAG, "Session ${dir.name.take(8)} has no session.json but ${audio.size} audio files; kept")
                 return@forEach
             }
             dir.listFiles { f -> f.name.endsWith(PART) }.orEmpty().sortedBy { seqOf(it) }.forEach { part ->
@@ -112,9 +112,9 @@ class FragmentStore(private val root: File, private val sampleRate: Int, private
             if (session.endMs == null) {
                 val headers = headersIn(dir)
                 endSession(session.sessionId, headers.maxOfOrNull { it.endMs } ?: session.startMs, headers.size)
-                AppLog.i(TAG, "Sesión ${session.sessionId.take(8)} cerrada en la recuperación (${headers.size} fragmentos)")
+                AppLog.i(TAG, "Session ${session.sessionId.take(8)} closed during recovery (${headers.size} fragments)")
             }
-            // Sin audio pendiente, la sesión solo sigue en el reloj si el móvil aún no sabe que terminó.
+            // With no pending audio, the session only stays on the watch if the phone doesn't know it ended yet.
             val current = readSession(dir.name)
             if (headersIn(dir).isEmpty() && (current?.endAcked == true || (current?.totalFragments ?: 0) == 0)) dir.deleteRecursively()
         }
@@ -129,7 +129,7 @@ class FragmentStore(private val root: File, private val sampleRate: Int, private
         if (result.audioPackets.isEmpty() || segments.isEmpty()) {
             part.delete()
             journal.delete()
-            AppLog.i(TAG, "Fragmento $seq vacío tras el cierre inesperado; descartado")
+            AppLog.i(TAG, "Fragment $seq empty after the unexpected shutdown; discarded")
             return false
         }
         if (result.validLength < part.length()) {
@@ -145,24 +145,24 @@ class FragmentStore(private val root: File, private val sampleRate: Int, private
                 last = false,
             ),
         )
-        AppLog.i(TAG, "Fragmento $seq recuperado: ${result.durationMs} ms, ${header.sizeBytes} B, ${segments.size} segmentos")
+        AppLog.i(TAG, "Fragment $seq recovered: ${result.durationMs} ms, ${header.sizeBytes} B, ${segments.size} segments")
         return true
     }
 
-    /** Fragmentos cerrados pendientes de envío, en orden. */
+    /** Closed fragments waiting to be sent, in order. */
     fun pending(): List<FragmentHeader> = sessionDirs().flatMap { headersIn(it) }.sortedWith(compareBy({ it.sessionStartMs }, { it.seq }))
 
-    /** Sesiones terminadas cuyo final aún no ha confirmado el móvil. */
+    /** Ended sessions whose end the phone hasn't confirmed yet. */
     fun endedSessions(): List<SessionMeta> =
         sessionDirs().mapNotNull { readSession(it.name) }.filter { it.endMs != null && !it.endAcked }
 
-    /** Borra una sesión terminada sin ningún fragmento: el móvil nunca supo de ella. */
+    /** Deletes an ended session with no fragments: the phone never knew about it. */
     fun deleteEmptySession(sessionId: String) {
         val dir = sessionDir(sessionId)
         if (headersIn(dir).isEmpty() && dir.listFiles { f -> f.name.endsWith(PART) }.orEmpty().isEmpty()) dir.deleteRecursively()
     }
 
-    /** El móvil confirmó un fragmento: ya puede borrarse del reloj. */
+    /** The phone confirmed a fragment: it can be deleted from the watch. */
     fun delete(header: FragmentHeader) {
         val dir = sessionDir(header.sessionId)
         File(dir, "${header.seq}$OGG").delete()
@@ -176,14 +176,14 @@ class FragmentStore(private val root: File, private val sampleRate: Int, private
         cleanup(sessionId)
     }
 
-    /** Una sesión desaparece del reloj cuando el móvil tiene su final y todos sus fragmentos. */
+    /** A session disappears from the watch once the phone has its end and all its fragments. */
     private fun cleanup(sessionId: String) {
         val meta = readSession(sessionId) ?: return
         val dir = sessionDir(sessionId)
         val hasAudio = dir.listFiles { f -> f.name.endsWith(OGG) || f.name.endsWith(PART) }.orEmpty().isNotEmpty()
         if (meta.endAcked && !hasAudio) {
             dir.deleteRecursively()
-            AppLog.i(TAG, "Sesión ${sessionId.take(8)} entregada por completo; borrada del reloj")
+            AppLog.i(TAG, "Session ${sessionId.take(8)} fully delivered; deleted from the watch")
         }
     }
 
@@ -220,7 +220,7 @@ class FragmentStore(private val root: File, private val sampleRate: Int, private
             out.write(content.encodeToByteArray())
             out.fd.sync()
         }
-        check(tmp.renameTo(target)) { "No se pudo escribir ${target.name}" }
+        check(tmp.renameTo(target)) { "Couldn't write ${target.name}" }
     }
 
     private fun sha256(file: File): String {

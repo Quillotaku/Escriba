@@ -4,8 +4,8 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 
 /**
- * Franja diaria en la que se graba en modo continuo. Admite franjas que cruzan la medianoche
- * (p. ej., 22:00–06:00). Si inicio y fin coinciden, se graba todo el día.
+ * Daily window in which continuous mode records. Windows may cross midnight (e.g. 22:00–06:00).
+ * If start and end are equal, it records all day.
  */
 data class DailyWindow(val start: LocalTime, val end: LocalTime) {
 
@@ -17,7 +17,7 @@ data class DailyWindow(val start: LocalTime, val end: LocalTime) {
         else -> time >= start || time < end
     }
 
-    /** Próximo instante, estrictamente posterior a [now], en que cambia el estado de la franja. */
+    /** Next instant, strictly after [now], at which the window opens or closes. */
     fun nextChange(now: LocalDateTime): LocalDateTime? {
         if (allDay) return null
         val boundary = if (contains(now.toLocalTime())) end else start
@@ -31,7 +31,7 @@ data class DailyWindow(val start: LocalTime, val end: LocalTime) {
     companion object {
         val DEFAULT = DailyWindow(LocalTime.of(7, 30), LocalTime.of(23, 30))
 
-        /** Acepta "07:30-23:30". */
+        /** Accepts "07:30-23:30". */
         fun parse(text: String): DailyWindow? {
             val parts = text.split('-', '–').map { it.trim() }
             if (parts.size != 2) return null

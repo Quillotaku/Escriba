@@ -12,21 +12,24 @@ import dev.escriba.shared.llm.InsightsMerger
 import dev.escriba.shared.llm.MergedSummary
 import dev.escriba.shared.transcription.TranscriptLine
 import dev.escriba.shared.vault.Profile
+import dev.escriba.shared.voices.VoiceMath
 import java.io.Closeable
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-/** Nombres de notas que ya existen en la bóveda, para que el modelo los escriba igual. */
+/** Names of notes that already exist in the vault, so the model writes them the same way. */
 data class KnownEntities(val people: List<String>, val projects: List<String>, val clients: List<String>)
 
 /**
- * Saca título, resumen, decisiones, tareas y entidades de una conversación con un LLM local.
+ * Extracts title, summary, decisions, tasks and entities from a conversation with a local LLM.
  *
- * Si la transcripción no cabe en el contexto, se procesa por trozos (map) y luego se fusiona
- * (reduce): las listas se juntan sin repetidos y el modelo escribe el título y el resumen finales
- * a partir de los resúmenes parciales.
+ * If the transcript doesn't fit in the context, it's processed in chunks (map) and then merged
+ * (reduce): the lists are joined without duplicates and the model writes the final title and
+ * summary from the partial summaries.
+ *
+ * The instructions are in English, but the model writes in the language of the conversation.
  */
 class Summarizer(private val models: ModelStore, private val slot: ModelSlot) {
 
@@ -57,14 +60,14 @@ class Summarizer(private val models: ModelStore, private val slot: ModelSlot) {
             val system = systemPrompt(profile)
             val context = contextBlock(profile, known, lines, zone, day)
 
-            // Presupuesto: contexto total menos instrucciones, cabecera y espacio para la respuesta.
+            // Budget: total context minus instructions, header and room for the answer.
             val reserved = engine.countTokens(system) + engine.countTokens(context) + RESPONSE_TOKENS + MARGIN_TOKENS
             val budget = (engine.contextSize - reserved).coerceAtLeast(MIN_CHUNK_TOKENS)
             val chunks = chunk(lines.map { render(it, zone) }, budget)
 
             val parts = chunks.mapIndexed { i, chunk ->
-                val header = if (chunks.size > 1) "Esta es la parte ${i + 1} de ${chunks.size} de la conversación.\n" else ""
-                val json = engine.generate(system, noThink(context + header + "Transcripción:\n" + chunk), Grammars.INSIGHTS, RESPONSE_TOKENS)
+                val header = if (chunks.size > 1) "This is part ${i + 1} of ${chunks.size} of the conversation.\n" else ""
+                val json = engine.generate(system, noThink(context + header + "Transcript:\n" + chunk), Grammars.INSIGHTS, RESPONSE_TOKENS)
                 engine.lastStats()?.let(stats::add)
                 Insights.parse(json)
             }
@@ -72,11 +75,12 @@ class Summarizer(private val models: ModelStore, private val slot: ModelSlot) {
             val insights = if (parts.size == 1) {
                 parts.single()
             } else {
-                val partials = parts.mapIndexed { i, p -> "Parte ${i + 1} — ${p.title}:\n${p.summary}" }.joinToString("\n\n")
+                val partials = parts.mapIndexed { i, p -> "Part ${i + 1} — ${p.title}:\n${p.summary}" }.joinToString("\n\n")
                 val merged = engine.generate(
-                    "Eres el asistente de Escriba. Combina los resúmenes parciales de una misma conversación en uno solo, " +
-                        "siguiendo estas instrucciones del perfil:\n${profile.prompt}\n" +
-                        "Devuelve solo JSON con \"titulo\" (3–8 palabras) y \"resumen\". Escribe en español y no inventes nada.",
+                    "You are Escriba's assistant. Combine the partial summaries of one conversation into a single one, " +
+                        "following these profile instructions:\n${profile.prompt}\n" +
+                        "Return only JSON with \"title\" (3–8 words) and \"summary\". Write in the same language as the " +
+                        "partial summaries and don't make anything up.",
                     noThink(partials),
                     Grammars.MERGED,
                     RESPONSE_TOKENS,
@@ -101,14 +105,14 @@ class Summarizer(private val models: ModelStore, private val slot: ModelSlot) {
                     generateTps = stats.map { it.generateTokensPerSecond }.average().takeIf { !it.isNaN() } ?: 0.0,
                 ),
             )
-            AppLog.i(TAG, "Resumen con $modelName: ${result.stats.chunks} trozos, ${result.stats.promptTokens} tokens leídos " +
-                "(%.0f t/s), ${result.stats.generatedTokens} escritos (%.1f t/s), %d s".format(
+            AppLog.i(TAG, "Summary with $modelName: ${result.stats.chunks} chunks, ${result.stats.promptTokens} tokens read " +
+                "(%.0f t/s), ${result.stats.generatedTokens} written (%.1f t/s), %d s".format(
                     result.stats.promptTps, result.stats.generateTps, result.stats.totalMs / 1000,
                 ))
             return result
         }
 
-        /** Qwen3 «híbrido» razona antes de contestar salvo que se le pida lo contrario. */
+        /** "Hybrid" Qwen3 reasons before answering unless told otherwise. */
         private fun noThink(user: String) =
             if (modelName.startsWith("Qwen3-", ignoreCase = true) && !modelName.contains("Instruct", ignoreCase = true)) "$user\n/no_think" else user
 
@@ -119,9 +123,9 @@ class Summarizer(private val models: ModelStore, private val slot: ModelSlot) {
         }
     }
 
-    /** Carga el modelo [name]. Ocupa el hueco de modelo: Whisper y el LLM nunca están cargados a la vez. */
+    /** Loads the model [name]. It takes the model slot: Whisper and the LLM are never loaded at the same time. */
     suspend fun open(name: String): Session {
-        val entry = models.find(name) ?: error("No hay ningún modelo «$name» en la carpeta de modelos")
+        val entry = models.find(name) ?: error("There's no model \"$name\" in the models folder")
         slot.mutex.lock()
         try {
             val start = System.currentTimeMillis()
@@ -131,8 +135,8 @@ class Summarizer(private val models: ModelStore, private val slot: ModelSlot) {
                 throw it
             }
             val loadMs = System.currentTimeMillis() - start
-            AppLog.i(TAG, "LLM ${entry.name} cargado en $loadMs ms (contexto ${engine.contextSize} tokens)")
-            // Diagnóstico de rendimiento: qué instrucciones usa ggml y si reempaqueta los pesos para i8mm.
+            AppLog.i(TAG, "LLM ${entry.name} loaded in $loadMs ms (context ${engine.contextSize} tokens)")
+            // Performance diagnostics: which instructions ggml uses and whether it repacks the weights for i8mm.
             AppLog.i(TAG, "CPU: " + LlamaEngine.systemInfo())
             LlamaEngine.nativeLog().lines()
                 .filter { line -> listOf("repack", "REPACK", "buffer size", "CPU_", "n_threads", "flash", "type_k").any { it in line } }
@@ -146,38 +150,39 @@ class Summarizer(private val models: ModelStore, private val slot: ModelSlot) {
     }
 
     private fun systemPrompt(p: Profile): String = buildString {
-        append("Eres el asistente de Escriba. Recibes la transcripción automática de una grabación ")
-        append("(puede tener errores de reconocimiento de voz) y devuelves SOLO un objeto JSON.\n\n")
-        append("Campos:\n")
-        append("- \"titulo\": 3–8 palabras que describan el tema. Sin fecha.\n")
-        append("- \"resumen\": lo que pidan las instrucciones del perfil. Puedes usar listas y negritas de Markdown, pero no encabezados.\n")
-        append("- \"decisiones\": solo decisiones tomadas explícitamente. Lista vacía si no hay.\n")
+        append("You are Escriba's assistant. You receive the automatic transcript of a recording ")
+        append("(it may contain speech recognition errors) and return ONLY a JSON object.\n\n")
+        append("Fields:\n")
+        append("- \"title\": 3–8 words describing the topic. No date.\n")
+        append("- \"summary\": whatever the profile instructions ask for. You may use Markdown lists and bold, but no headings.\n")
+        append("- \"decisions\": only decisions made explicitly. Empty list if there are none.\n")
         if (p.tasks) {
-            append("- \"tareas\": acciones concretas que alguien se compromete a hacer. \"responsable\": quién (\"Yo\" si es quien graba), o null. ")
-            append("\"fecha\": AAAA-MM-DD si se menciona un plazo (calcúlalo a partir de la fecha de hoy), o null.\n")
+            append("- \"tasks\": concrete actions someone commits to doing. \"owner\": who (\"${VoiceMath.ME}\" if it's the person recording), or null. ")
+            append("\"due\": YYYY-MM-DD if a deadline is mentioned (work it out from today's date), or null.\n")
         } else {
-            append("- \"tareas\": devuelve siempre una lista vacía.\n")
+            append("- \"tasks\": always return an empty list.\n")
         }
-        append("- \"personas\", \"proyectos\", \"clientes\": nombres propios mencionados. Si coinciden con los conocidos, escríbelos igual que en esa lista.\n")
-        append("- \"etiquetas\": de 2 a 5 palabras clave, en minúscula y sin #.\n")
-        append("- \"trivial\": true si la grabación no tiene contenido útil (saludos, ruido, televisión, frases sueltas).\n\n")
-        append("Reglas: escribe en español; no inventes nada que no esté en la transcripción; si algo no se entiende, omítelo.\n\n")
-        append("Instrucciones del perfil «${p.name}»:\n")
-        append(p.prompt.ifBlank { "Resume en pocas frases de qué se ha hablado." })
+        append("- \"people\", \"projects\", \"clients\": proper names mentioned. If they match the known ones, write them exactly as in that list.\n")
+        append("- \"tags\": 2 to 5 keywords, lowercase and without #.\n")
+        append("- \"trivial\": true if the recording has no useful content (greetings, noise, TV, loose sentences).\n\n")
+        append("Rules: write the title, summary, decisions and tasks in the same language as the conversation; ")
+        append("don't make up anything that isn't in the transcript; if something can't be understood, leave it out.\n\n")
+        append("Instructions of the profile \"${p.name}\":\n")
+        append(p.prompt.ifBlank { "Summarize in a few sentences what was talked about." })
     }
 
     private fun contextBlock(p: Profile, known: KnownEntities, lines: List<TranscriptLine>, zone: ZoneId, day: LocalDate): String = buildString {
         val time = DateTimeFormatter.ofPattern("HH:mm")
         val start = lines.firstOrNull()?.let { Instant.ofEpochMilli(it.wallStartMs).atZone(zone).format(time) } ?: "?"
         val end = lines.lastOrNull()?.let { Instant.ofEpochMilli(it.wallEndMs).atZone(zone).format(time) } ?: "?"
-        append("Hoy es ${Dates.spoken(day)}. La grabación es de $start a $end.\n")
-        append("Perfil: ${p.name}")
-        p.client?.let { append(" · Cliente: ${it.removePrefix("[[").removeSuffix("]]")}") }
+        append("Today is ${Dates.spoken(day)}. The recording runs from $start to $end.\n")
+        append("Profile: ${p.name}")
+        p.client?.let { append(" · Client: ${it.removePrefix("[[").removeSuffix("]]")}") }
         append('\n')
-        if (p.vocabulary.isNotEmpty()) append("Vocabulario propio: ${p.vocabulary.joinToString(", ")}\n")
-        if (known.people.isNotEmpty()) append("Personas conocidas: ${known.people.take(MAX_KNOWN).joinToString(", ")}\n")
-        if (known.projects.isNotEmpty()) append("Proyectos conocidos: ${known.projects.take(MAX_KNOWN).joinToString(", ")}\n")
-        if (known.clients.isNotEmpty()) append("Clientes conocidos: ${known.clients.take(MAX_KNOWN).joinToString(", ")}\n")
+        if (p.vocabulary.isNotEmpty()) append("Own vocabulary: ${p.vocabulary.joinToString(", ")}\n")
+        if (known.people.isNotEmpty()) append("Known people: ${known.people.take(MAX_KNOWN).joinToString(", ")}\n")
+        if (known.projects.isNotEmpty()) append("Known projects: ${known.projects.take(MAX_KNOWN).joinToString(", ")}\n")
+        if (known.clients.isNotEmpty()) append("Known clients: ${known.clients.take(MAX_KNOWN).joinToString(", ")}\n")
         append('\n')
     }
 
@@ -186,7 +191,7 @@ class Summarizer(private val models: ModelStore, private val slot: ModelSlot) {
         return "[$t] " + (l.speaker?.let { "$it: " } ?: "") + l.text
     }
 
-    /** Trozos de líneas enteras que no pasan de [budget] tokens (estimados por caracteres). */
+    /** Chunks of whole lines that don't exceed [budget] tokens (estimated from characters). */
     private fun chunk(lines: List<String>, budget: Int): List<String> {
         val maxChars = budget * CHARS_PER_TOKEN
         val chunks = ArrayList<String>()
@@ -199,7 +204,7 @@ class Summarizer(private val models: ModelStore, private val slot: ModelSlot) {
             current.append(line).append('\n')
         }
         if (current.isNotEmpty()) chunks += current.toString()
-        return chunks.ifEmpty { listOf("(sin transcripción)") }
+        return chunks.ifEmpty { listOf("(no transcript)") }
     }
 
     private object MergedSummaryParser {
@@ -207,12 +212,12 @@ class Summarizer(private val models: ModelStore, private val slot: ModelSlot) {
     }
 
     private companion object {
-        const val TAG = "resumen"
+        const val TAG = "summary"
         const val CONTEXT_TOKENS = 8192
         const val RESPONSE_TOKENS = 1200
         const val MARGIN_TOKENS = 200
         const val MIN_CHUNK_TOKENS = 1500
-        /** Estimación prudente para español (≈3,5 caracteres por token en Qwen y Gemma). */
+        /** Conservative estimate (≈3.5 characters per token for Spanish in Qwen and Gemma; more in English). */
         const val CHARS_PER_TOKEN = 3
         const val MAX_KNOWN = 80
     }

@@ -14,20 +14,20 @@ import dev.escriba.shared.transcription.Timeline
 import java.io.Closeable
 import java.io.File
 
-/** Frase reconocida en un bloque de audio, con tiempos relativos al bloque. */
+/** A line recognized in an audio chunk, with times relative to the chunk. */
 data class AsrSegment(val startMs: Long, val endMs: Long, val noSpeechProb: Float, val text: String)
 
-/** Motor de reconocimiento: Whisper (whisper.cpp) o Parakeet (sherpa-onnx). */
+/** Speech recognition engine: Whisper (whisper.cpp) or Parakeet (sherpa-onnx). */
 interface AsrEngine : Closeable {
     val name: String
 
-    /** Transcribe un bloque de PCM 16 kHz mono de hasta ~30 s. */
+    /** Transcribes a chunk of 16 kHz mono PCM of up to ~30 s. */
     fun transcribe(pcm: FloatArray, language: String, prompt: String?, threads: Int, fast: Boolean): List<AsrSegment>
 
-    /** Tiempos de codificador y decodificador del último bloque, si el motor los da (ms). */
+    /** Encoder and decoder times of the last chunk, if the engine reports them (ms). */
     fun timings(): Pair<Float, Float>? = null
 
-    /** Admite el vocabulario del perfil como contexto inicial. */
+    /** Accepts the profile's vocabulary as initial context. */
     val supportsPrompt: Boolean
 }
 
@@ -47,8 +47,8 @@ class WhisperAsr(private val engine: WhisperEngine, private val file: OpenModel)
 }
 
 /**
- * NVIDIA Parakeet TDT 0.6B v3 con sherpa-onnx: 25 idiomas europeos, con puntuación. No admite
- * prompt inicial; devuelve tokens con su instante, que aquí se agrupan en frases.
+ * NVIDIA Parakeet TDT 0.6B v3 with sherpa-onnx: 25 European languages, with punctuation. It doesn't
+ * take an initial prompt; it returns timestamped tokens, which are grouped into lines here.
  */
 class ParakeetAsr(encoder: String, decoder: String, joiner: String, tokens: String, threads: Int) : AsrEngine {
     override val name = MODEL_NAME
@@ -81,9 +81,9 @@ class ParakeetAsr(encoder: String, decoder: String, joiner: String, tokens: Stri
     }
 
     /**
-     * Agrupa los tokens en frases: acaban en «.», «?» o «!», en una pausa de más de
-     * [PAUSE_MS] o, si se alargan mucho, en el siguiente cambio de palabra. Frases cortas
-     * permiten luego asignar bien a cada hablante.
+     * Groups the tokens into lines: they end at ".", "?" or "!", at a pause longer than [PAUSE_MS]
+     * or, if they get very long, at the next word boundary. Short lines make it easier to assign
+     * each one to the right speaker later.
      */
     private fun sentences(tokens: Array<String>, times: FloatArray, totalMs: Long): List<AsrSegment> {
         val out = ArrayList<AsrSegment>()
@@ -126,7 +126,7 @@ class ParakeetAsr(encoder: String, decoder: String, joiner: String, tokens: Stri
     }
 }
 
-/** Audio de voz de una lista de fragmentos, unido, normalizado y con su mapa de hora real. */
+/** Speech audio of a list of fragments, joined, normalized and with its real-time map. */
 class SpeechAudio(val pcm: FloatArray, val segments: List<Segment>) {
     val timeline = Timeline(segments)
     val durationMs: Long get() = pcm.size * 1000L / 16_000
@@ -138,8 +138,8 @@ class SpeechAudio(val pcm: FloatArray, val segments: List<Segment>) {
             for (f in fragments.sortedBy { it.seq }) {
                 val pcm = AudioDecoder.decode(File(f.path))
                 pieces += pcm
-                // La tabla del reloj y el audio decodificado pueden diferir unos ms por el retardo
-                // del códec: se ajusta el último tramo para que la suma cuadre con el audio real.
+                // The watch's table and the decoded audio may differ by a few ms because of the codec
+                // delay: the last segment is adjusted so the total matches the real audio.
                 val fragSegments = EscribaJson.decodeFromString<List<Segment>>(f.segmentsJson)
                 val declared = fragSegments.sumOf { it.durationMs }
                 val actual = pcm.size * 1000L / 16_000

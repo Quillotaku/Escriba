@@ -5,9 +5,9 @@ import dev.escriba.shared.crypto.Crypto
 import dev.escriba.shared.recording.DailyWindow
 import kotlinx.serialization.Serializable
 
-enum class DailyNoteMode { DATAVIEW, ENLACE, NINGUNA }
+enum class DailyNoteMode { DATAVIEW, LINK, NONE }
 
-/** Perfil ya resuelto (herencia aplicada y validado). */
+/** A resolved profile (inheritance applied and validated). */
 @Serializable
 data class Profile(
     val id: String,
@@ -15,13 +15,14 @@ data class Profile(
     val color: String,
     val icon: String,
     val favorite: Boolean,
+    /** [ProfileLoader.MODE_CONTINUOUS] or [ProfileLoader.MODE_ON_DEMAND]. */
     val mode: String,
     val vad: String,
     val splitAfterSilenceMin: Int,
     val folder: String,
     val template: String?,
     val whisper: String,
-    /** «whisper» o «parakeet». */
+    /** "whisper" or "parakeet". */
     val engine: String,
     val llm: String,
     val language: String,
@@ -37,13 +38,15 @@ data class Profile(
     val client: String?,
     val prompt: String,
 ) {
-    /** Huella del perfil: cambia si cambia cualquier ajuste. Viaja con cada fragmento. */
+    /** Fingerprint of the profile: changes when any setting changes. It travels with every fragment. */
     val hash: String get() = Crypto.hex(Crypto.sha256(EscribaJson.encodeToString(this).encodeToByteArray())).take(12)
+
+    val continuous: Boolean get() = mode == ProfileLoader.MODE_CONTINUOUS
 
     fun summary() = WatchProfile(id, name, color, icon, favorite, mode, vad, hash)
 }
 
-/** Lo que el reloj necesita saber de un perfil. */
+/** What the watch needs to know about a profile. */
 @Serializable
 data class WatchProfile(
     val id: String,
@@ -54,9 +57,11 @@ data class WatchProfile(
     val mode: String,
     val vad: String,
     val hash: String,
-)
+) {
+    val continuous: Boolean get() = mode == ProfileLoader.MODE_CONTINUOUS
+}
 
-/** Mensaje móvil → reloj con la lista de perfiles y la configuración que afecta al reloj. */
+/** Phone → watch message with the profile list and the settings that affect the watch. */
 @Serializable
 data class ProfileList(
     val profiles: List<WatchProfile>,
@@ -66,27 +71,27 @@ data class ProfileList(
     val hash: String get() = Crypto.hex(Crypto.sha256(EscribaJson.encodeToString(this).encodeToByteArray())).take(12)
 }
 
-/** Configuración global de `_config/escriba/escriba.md`. */
+/** Global settings from `_config/escriba/escriba.md`. */
 data class GlobalConfig(
     val schedule: DailyWindow = DailyWindow.DEFAULT,
     val timeZone: String = "Europe/Madrid",
-    val dailyFolder: String = "Diario",
+    val dailyFolder: String = "Daily",
     val dailyFormat: String = "YYYY-MM-DD",
-    val peopleFolder: String = "Personas",
-    val projectsFolder: String = "Proyectos",
-    val clientsFolder: String = "Clientes",
-    val attachmentsFolder: String = "Adjuntos/Escriba",
-    val defaultProfile: String = "casual",
+    val peopleFolder: String = "People",
+    val projectsFolder: String = "Projects",
+    val clientsFolder: String = "Clients",
+    val attachmentsFolder: String = "Attachments/Escriba",
+    val defaultProfile: String = "personal",
     val defaultWhisper: String = "large-v3-turbo-q8_0",
     val defaultLlm: String = "gemma-3-4b-it-Q4_K_M",
     val phoneAudioRetentionDays: Int = 7,
 )
 
-/** Resultado de leer todos los perfiles de la bóveda. */
+/** Result of reading every profile in the vault. */
 data class ProfileSet(
     val config: GlobalConfig,
     val profiles: Map<String, Profile>,
-    /** Errores por archivo (`escriba.md` o `perfiles/<id>.md`). */
+    /** Errors per file (`escriba.md` or `profiles/<id>.md`). */
     val errors: Map<String, List<String>>,
 ) {
     val defaultProfile: Profile? get() = profiles[config.defaultProfile] ?: profiles.values.firstOrNull()
@@ -99,72 +104,77 @@ data class ProfileSet(
 }
 
 /**
- * Lee, hereda y valida los perfiles. Un perfil con errores se descarta sin afectar a los demás,
- * y cada error dice en qué archivo y propiedad está.
+ * Reads, inherits and validates the profiles. A profile with errors is dropped without affecting
+ * the others, and every error says which file and property it's in.
  */
 object ProfileLoader {
 
-    val ICONS = setOf("mic", "maletin", "idea", "casa", "persona", "grupo", "telefono", "coche", "libro", "estrella")
-    private val MODES = setOf("continuo", "bajo_demanda")
-    private val VADS = setOf("baja", "media", "alta")
+    const val MODE_CONTINUOUS = "continuous"
+    const val MODE_ON_DEMAND = "on_demand"
+
+    val ICONS = setOf("mic", "briefcase", "idea", "home", "person", "group", "phone", "car", "book", "star")
+    private val MODES = setOf(MODE_CONTINUOUS, MODE_ON_DEMAND)
+    private val VADS = setOf("low", "medium", "high")
     private val LANGUAGES = setOf("es", "en", "auto")
     private val ENGINES = setOf("whisper", "parakeet")
-    private val LINKS = setOf("personas", "proyectos", "clientes")
+    private val LINKS = setOf("people", "projects", "clients")
     private val ID = Regex("[a-z0-9][a-z0-9_-]{0,39}")
     private val COLOR = Regex("#[0-9A-Fa-f]{6}")
 
     private val KNOWN = setOf(
-        "version", "nombre", "hereda", "color", "icono", "favorito", "modo", "vad", "separar_tras_silencio", "carpeta",
-        "plantilla", "whisper", "motor", "llm", "idioma", "vocabulario", "diarizacion", "tareas", "enlazar", "descartar_triviales",
-        "guardar_audio", "retencion_audio", "redondeo", "nota_diaria", "cliente",
+        "version", "name", "inherits", "color", "icon", "favorite", "mode", "vad", "split_after_silence", "folder",
+        "template", "whisper", "engine", "llm", "language", "vocabulary", "diarization", "tasks", "link", "discard_trivial",
+        "save_audio", "audio_retention", "rounding", "daily_note", "client",
     )
 
-    /** [profileFiles]: nombre de archivo sin extensión → contenido. */
+    private const val UNKNOWN_PROPERTY = "Unknown property"
+
+    /** [profileFiles]: file name without extension → content. */
     fun load(configFile: String?, profileFiles: Map<String, String>): ProfileSet {
         val errors = LinkedHashMap<String, MutableList<String>>()
         val config = configFile?.let { parseConfig(it, errors.getOrPut(CONFIG_FILE) { ArrayList() }) } ?: GlobalConfig()
 
         val raw = LinkedHashMap<String, Frontmatter>()
         for ((name, text) in profileFiles) {
-            val fileErrors = errors.getOrPut("perfiles/$name.md") { ArrayList() }
+            val fileErrors = errors.getOrPut("profiles/$name.md") { ArrayList() }
             if (!ID.matches(name)) {
-                fileErrors += "El nombre del archivo debe ser un id en minúsculas, sin espacios (p. ej. «trabajo-acme»)"
+                fileErrors += "The file name must be a lowercase id without spaces (e.g. \"work-acme\")"
                 continue
             }
             val (fm, yamlErrors) = Frontmatter.parse(text)
             fileErrors += yamlErrors.map { it.toString() }
-            fm.properties.keys.filter { it !in KNOWN }.forEach { fileErrors += "Propiedad desconocida «$it» (se ignora)" }
+            fm.properties.keys.filter { it !in KNOWN }.forEach { fileErrors += "$UNKNOWN_PROPERTY \"$it\" (ignored)" }
             if (yamlErrors.isEmpty()) raw[name] = fm
         }
 
         val profiles = LinkedHashMap<String, Profile>()
         for (id in raw.keys) {
-            val fileErrors = errors.getOrPut("perfiles/$id.md") { ArrayList() }
+            val fileErrors = errors.getOrPut("profiles/$id.md") { ArrayList() }
             val chain = inheritanceChain(id, raw, fileErrors) ?: continue
             resolve(id, chain, raw, config, fileErrors)?.let { profiles[id] = it }
         }
         if (configFile != null && config.defaultProfile !in profiles && profiles.isNotEmpty()) {
-            errors.getOrPut(CONFIG_FILE) { ArrayList() } += "perfil_por_defecto «${config.defaultProfile}» no existe; se usa «${profiles.keys.first()}»"
+            errors.getOrPut(CONFIG_FILE) { ArrayList() } += "default_profile \"${config.defaultProfile}\" doesn't exist; using \"${profiles.keys.first()}\""
         }
         return ProfileSet(config, profiles, errors.filterValues { it.isNotEmpty() })
     }
 
-    /** Del perfil más general al más concreto. null si la herencia es imposible. */
+    /** From the most general profile to the most specific. null if inheritance is impossible. */
     private fun inheritanceChain(id: String, raw: Map<String, Frontmatter>, errors: MutableList<String>): List<String>? {
         val chain = ArrayList<String>()
         var current: String? = id
         while (current != null) {
             if (current in chain) {
-                errors += "Herencia circular: ${(chain + current).joinToString(" → ")}"
+                errors += "Circular inheritance: ${(chain + current).joinToString(" → ")}"
                 return null
             }
             val fm = raw[current]
             if (fm == null) {
-                errors += "hereda: el perfil «$current» no existe o tiene errores"
+                errors += "inherits: the profile \"$current\" doesn't exist or has errors"
                 return null
             }
             chain += current
-            current = fm.text("hereda")?.trim()?.takeIf { it.isNotEmpty() }
+            current = fm.text("inherits")?.trim()?.takeIf { it.isNotEmpty() }
         }
         return chain.reversed()
     }
@@ -174,51 +184,51 @@ object ProfileLoader {
         var prompt = ""
         for (link in chain) {
             val fm = raw.getValue(link)
-            merged.putAll(fm.properties.filterKeys { it != "hereda" && (link == id || it != "nombre") })
+            merged.putAll(fm.properties.filterKeys { it != "inherits" && (link == id || it != "name") })
             extractPrompt(fm.body).takeIf { it.isNotBlank() }?.let { prompt = it }
         }
         val before = errors.size
         val p = Reader(merged, errors)
 
-        val name = p.text("nombre") ?: id.replaceFirstChar { it.uppercase() }
-        if (name.length > 24) errors += "nombre: como mucho 24 caracteres (se ve en el reloj)"
+        val name = p.text("name") ?: id.replaceFirstChar { it.uppercase() }
+        if (name.length > 24) errors += "name: at most 24 characters (it's shown on the watch)"
         val profile = Profile(
             id = id,
             name = name,
-            color = p.text("color", "#607D8B").also { if (!COLOR.matches(it)) errors += "color: usa el formato #RRGGBB" },
-            icon = p.oneOf("icono", ICONS, "mic"),
-            favorite = p.bool("favorito", false),
-            mode = p.oneOf("modo", MODES, "bajo_demanda"),
-            vad = p.oneOf("vad", VADS, "media"),
-            splitAfterSilenceMin = p.minutes("separar_tras_silencio", 10),
-            folder = p.text("carpeta", "Grabaciones/{{yyyy}}/{{MM}}").trim('/'),
-            template = p.text("plantilla"),
+            color = p.text("color", "#607D8B").also { if (!COLOR.matches(it)) errors += "color: use the #RRGGBB format" },
+            icon = p.oneOf("icon", ICONS, "mic"),
+            favorite = p.bool("favorite", false),
+            mode = p.oneOf("mode", MODES, MODE_ON_DEMAND),
+            vad = p.oneOf("vad", VADS, "medium"),
+            splitAfterSilenceMin = p.minutes("split_after_silence", 10),
+            folder = p.text("folder", "Recordings/{{yyyy}}/{{MM}}").trim('/'),
+            template = p.text("template"),
             whisper = p.text("whisper", config.defaultWhisper),
-            engine = p.oneOf("motor", ENGINES, "whisper"),
+            engine = p.oneOf("engine", ENGINES, "whisper"),
             llm = p.text("llm", config.defaultLlm),
-            language = p.oneOf("idioma", LANGUAGES, "es"),
-            vocabulary = p.list("vocabulario"),
-            diarization = p.bool("diarizacion", false),
-            tasks = p.bool("tareas", false),
-            link = p.list("enlazar").also { l -> l.filter { it !in LINKS }.forEach { errors += "enlazar: «$it» no es válido (${LINKS.joinToString()})" } },
-            discardTrivial = p.bool("descartar_triviales", false),
-            saveAudio = p.bool("guardar_audio", false),
-            audioRetentionDays = p.days("retencion_audio", 30),
-            roundingMin = p.minutes("redondeo", 1),
-            dailyNote = when (p.oneOf("nota_diaria", setOf("dataview", "enlace", "ninguna"), "dataview")) {
-                "enlace" -> DailyNoteMode.ENLACE
-                "ninguna" -> DailyNoteMode.NINGUNA
+            language = p.oneOf("language", LANGUAGES, "auto"),
+            vocabulary = p.list("vocabulary"),
+            diarization = p.bool("diarization", false),
+            tasks = p.bool("tasks", false),
+            link = p.list("link").also { l -> l.filter { it !in LINKS }.forEach { errors += "link: \"$it\" isn't valid (${LINKS.joinToString()})" } },
+            discardTrivial = p.bool("discard_trivial", false),
+            saveAudio = p.bool("save_audio", false),
+            audioRetentionDays = p.days("audio_retention", 30),
+            roundingMin = p.minutes("rounding", 1),
+            dailyNote = when (p.oneOf("daily_note", setOf("dataview", "link", "none"), "dataview")) {
+                "link" -> DailyNoteMode.LINK
+                "none" -> DailyNoteMode.NONE
                 else -> DailyNoteMode.DATAVIEW
             },
-            client = p.text("cliente"),
+            client = p.text("client"),
             prompt = prompt,
         )
-        // Los avisos de propiedades desconocidas no invalidan el perfil; el resto sí.
-        val blocking = errors.drop(before).filterNot { it.startsWith("Propiedad desconocida") }
+        // Unknown-property warnings don't invalidate the profile; everything else does.
+        val blocking = errors.drop(before).filterNot { it.startsWith(UNKNOWN_PROPERTY) }
         return if (blocking.isEmpty()) profile else null
     }
 
-    /** El prompt es la sección «## Prompt» del cuerpo o, si no la hay, el cuerpo entero. */
+    /** The prompt is the body's "## Prompt" section or, if there's none, the whole body. */
     fun extractPrompt(body: String): String {
         val lines = body.lines()
         val start = lines.indexOfFirst { it.trim().equals("## Prompt", ignoreCase = true) }
@@ -233,28 +243,28 @@ object ProfileLoader {
         val p = Reader(fm.properties, errors)
         val d = GlobalConfig()
         return GlobalConfig(
-            schedule = p.text("horario")?.let { DailyWindow.parse(it) ?: null.also { errors += "horario: usa el formato 07:30-23:30" } } ?: d.schedule,
-            timeZone = p.text("zona_horaria", d.timeZone),
-            dailyFolder = p.text("nota_diaria_carpeta", d.dailyFolder).trim('/'),
-            dailyFormat = p.oneOf("nota_diaria_formato", setOf("YYYY-MM-DD", "DD-MM-YYYY"), d.dailyFormat),
-            peopleFolder = p.text("carpeta_personas", d.peopleFolder).trim('/'),
-            projectsFolder = p.text("carpeta_proyectos", d.projectsFolder).trim('/'),
-            clientsFolder = p.text("carpeta_clientes", d.clientsFolder).trim('/'),
-            attachmentsFolder = p.text("carpeta_adjuntos", d.attachmentsFolder).trim('/'),
-            defaultProfile = p.text("perfil_por_defecto", d.defaultProfile),
-            defaultWhisper = p.text("whisper_por_defecto", d.defaultWhisper),
-            defaultLlm = p.text("llm_por_defecto", d.defaultLlm),
-            phoneAudioRetentionDays = p.days("retencion_audio_movil", d.phoneAudioRetentionDays) ?: d.phoneAudioRetentionDays,
+            schedule = p.text("schedule")?.let { DailyWindow.parse(it) ?: null.also { errors += "schedule: use the 07:30-23:30 format" } } ?: d.schedule,
+            timeZone = p.text("time_zone", d.timeZone),
+            dailyFolder = p.text("daily_note_folder", d.dailyFolder).trim('/'),
+            dailyFormat = p.oneOf("daily_note_format", setOf("YYYY-MM-DD", "DD-MM-YYYY"), d.dailyFormat),
+            peopleFolder = p.text("people_folder", d.peopleFolder).trim('/'),
+            projectsFolder = p.text("projects_folder", d.projectsFolder).trim('/'),
+            clientsFolder = p.text("clients_folder", d.clientsFolder).trim('/'),
+            attachmentsFolder = p.text("attachments_folder", d.attachmentsFolder).trim('/'),
+            defaultProfile = p.text("default_profile", d.defaultProfile),
+            defaultWhisper = p.text("default_whisper", d.defaultWhisper),
+            defaultLlm = p.text("default_llm", d.defaultLlm),
+            phoneAudioRetentionDays = p.days("phone_audio_retention", d.phoneAudioRetentionDays) ?: d.phoneAudioRetentionDays,
         )
     }
 
-    /** Acceso tipado a las propiedades, acumulando errores legibles. */
+    /** Typed access to the properties, collecting readable errors. */
     private class Reader(private val props: Map<String, YamlValue>, private val errors: MutableList<String>) {
         fun text(key: String): String? = when (val v = props[key]) {
             null, YamlValue.Empty -> null
             is YamlValue.Text -> v.value.trim().takeIf { it.isNotEmpty() }
             is YamlValue.Number -> v.value.let { if (it == Math.floor(it)) it.toLong().toString() else it.toString() }
-            else -> null.also { errors += "$key: debe ser un texto" }
+            else -> null.also { errors += "$key: must be text" }
         }
 
         fun text(key: String, default: String) = text(key) ?: default
@@ -262,34 +272,34 @@ object ProfileLoader {
         fun bool(key: String, default: Boolean): Boolean = when (val v = props[key]) {
             null, YamlValue.Empty -> default
             is YamlValue.Bool -> v.value
-            else -> default.also { errors += "$key: debe ser true o false" }
+            else -> default.also { errors += "$key: must be true or false" }
         }
 
         fun list(key: String): List<String> = when (val v = props[key]) {
             null, YamlValue.Empty -> emptyList()
             is YamlValue.Items -> v.values.map { it.trim() }.filter { it.isNotEmpty() }
             is YamlValue.Text -> listOf(v.value.trim())
-            else -> emptyList<String>().also { errors += "$key: debe ser una lista" }
+            else -> emptyList<String>().also { errors += "$key: must be a list" }
         }
 
         fun oneOf(key: String, allowed: Set<String>, default: String): String {
             val raw = text(key) ?: return default
-            // Sin distinguir mayúsculas: «yyyy-mm-dd» es «YYYY-MM-DD». Se devuelve la forma canónica.
+            // Case-insensitive: "yyyy-mm-dd" is "YYYY-MM-DD". The canonical form is returned.
             allowed.firstOrNull { it.equals(raw.trim(), ignoreCase = true) }?.let { return it }
-            errors += "$key: «$raw» no es válido (${allowed.joinToString()})"
+            errors += "$key: \"$raw\" isn't valid (${allowed.joinToString()})"
             return default
         }
 
         fun minutes(key: String, default: Int): Int {
             val raw = text(key) ?: return default
-            return Durations.minutes(raw) ?: default.also { errors += "$key: usa un formato como 10m, 1h o 90s" }
+            return Durations.minutes(raw) ?: default.also { errors += "$key: use a format like 10m, 1h or 90s" }
         }
 
         fun days(key: String, default: Int?): Int? {
             val raw = text(key) ?: return default
-            if (raw.lowercase() in setOf("nunca", "siempre", "0")) return null
-            // «0d» es lo mismo que «0»: no caduca nunca (borrar al instante no tiene sentido).
-            return Durations.days(raw)?.takeIf { it > 0 } ?: if (Durations.days(raw) == 0) null else default.also { errors += "$key: usa un formato como 30d o «siempre»" }
+            if (raw.lowercase() in setOf("never", "forever", "0")) return null
+            // "0d" means the same as "0": it never expires (deleting right away makes no sense).
+            return Durations.days(raw)?.takeIf { it > 0 } ?: if (Durations.days(raw) == 0) null else default.also { errors += "$key: use a format like 30d or \"forever\"" }
         }
     }
 

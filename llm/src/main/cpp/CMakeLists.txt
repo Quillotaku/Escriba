@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-# Igual que whisper.cpp: llama.cpp y su ggml estáticos dentro de una sola biblioteca.
+# Same as whisper.cpp: llama.cpp and its ggml statically inside a single library.
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
 set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
@@ -20,7 +20,7 @@ set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_SERVER OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_APP OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_UI OFF CACHE BOOL "" FORCE)
-set(LLAMA_OPENSSL OFF CACHE BOOL "" FORCE) # sin red: no hace falta HTTPS
+set(LLAMA_OPENSSL OFF CACHE BOOL "" FORCE) # no network: HTTPS isn't needed
 set(LLAMA_ALL_WARNINGS OFF CACHE BOOL "" FORCE)
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../../../native/llama.cpp ${CMAKE_BINARY_DIR}/llama)
@@ -28,6 +28,6 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../../../native/llama.cpp ${CMAK
 add_library(escriba_llm SHARED llama_jni.cpp)
 target_compile_options(escriba_llm PRIVATE -O3)
 target_link_libraries(escriba_llm PRIVATE llama android log)
-# whisper.cpp y llama.cpp llevan cada uno su copia de ggml. Ocultando los símbolos de las
-# bibliotecas estáticas, cada .so usa la suya aunque las dos estén cargadas en el mismo proceso.
+# whisper.cpp and llama.cpp each carry their own copy of ggml. By hiding the symbols of the static
+# libraries, each .so uses its own even when both are loaded in the same process.
 target_link_options(escriba_llm PRIVATE -Wl,--exclude-libs,ALL)

@@ -26,17 +26,17 @@ import java.io.File
 import java.io.FileOutputStream
 
 /**
- * Recibe lo que manda el reloj: fragmentos por canal, finales de sesión y estado.
+ * Receives what the watch sends: fragments over a channel, session ends and status.
  *
- * Un fragmento solo se confirma (ACK) cuando su audio está escrito en disco y registrado en la
- * base de datos: hasta entonces el reloj lo conserva. Recibir dos veces el mismo fragmento no
- * duplica nada; simplemente se vuelve a confirmar.
+ * A fragment is only acknowledged (ACK) once its audio is written to disk and recorded in the
+ * database: until then the watch keeps it. Receiving the same fragment twice doesn't duplicate
+ * anything; it's simply acknowledged again.
  */
 class Inbox(
     private val root: File,
     private val link: DataLayerLink,
     private val db: EscribaDb,
-    /** Se llama cuando una sesión tiene todos sus fragmentos y su final: es el momento de escribir las notas. */
+    /** Called when a session has all its fragments and its end: time to write the notes. */
     private val onSessionComplete: (sessionId: String, speechMs: Long) -> Unit,
 ) {
     private val mutex = Mutex()
@@ -53,7 +53,7 @@ class Inbox(
         if (channel.path != Protocol.PATH_FRAGMENT) return
         val paired = link.keys.peer.value
         if (paired == null || channel.nodeId != paired.nodeId) {
-            AppLog.e(TAG, "Canal de un nodo no emparejado; se ignora")
+            AppLog.e(TAG, "Channel from an unpaired node; ignored")
             runCatching { link.channels.close(channel).await() }
             link.reportUnknown(channel.nodeId)
             return
@@ -68,20 +68,20 @@ class Inbox(
         val audio = secure.open(Protocol.sealFragmentAudio(header.key), input.readBytes())
         val sha = Crypto.hex(Crypto.sha256(audio))
         if (sha != header.sha256 || audio.size.toLong() != header.sizeBytes) {
-            AppLog.e(TAG, "Fragmento ${header.key} dañado (hash o tamaño); no se confirma")
+            AppLog.e(TAG, "Fragment ${header.key} damaged (hash or size); not acknowledged")
             return
         }
 
         mutex.withLock { store(header, audio) }
         link.sendSealed(Protocol.PATH_ACK, Ack(header.sessionId, header.seq, header.sha256))
-        AppLog.i(TAG, "Fragmento ${header.sessionId.take(8)}#${header.seq} recibido: ${audio.size / 1024} KB en ${System.currentTimeMillis() - started} ms")
+        AppLog.i(TAG, "Fragment ${header.sessionId.take(8)}#${header.seq} received: ${audio.size / 1024} KB in ${System.currentTimeMillis() - started} ms")
     }
 
     private suspend fun store(header: FragmentHeader, audio: ByteArray) {
         val dao = db.sessions()
         val existing = dao.fragment(header.sessionId, header.seq)
         if (existing != null) {
-            if (existing.sha256 != header.sha256) AppLog.e(TAG, "Fragmento ${header.key} repetido con otro contenido; se conserva el primero")
+            if (existing.sha256 != header.sha256) AppLog.e(TAG, "Fragment ${header.key} repeated with different content; keeping the first one")
             return
         }
         val dir = File(root, header.sessionId).apply { mkdirs() }
@@ -91,7 +91,7 @@ class Inbox(
             it.write(audio)
             it.fd.sync()
         }
-        check(tmp.renameTo(file)) { "No se pudo guardar ${file.name}" }
+        check(tmp.renameTo(file)) { "Couldn't save ${file.name}" }
 
         val now = System.currentTimeMillis()
         val speechMs = header.segments.sumOf { it.durationMs }
@@ -137,19 +137,19 @@ class Inbox(
     private suspend fun reportIfComplete(sessionId: String) {
         val s = db.sessions().session(sessionId) ?: return
         if (s.isComplete && s.processedAtMs == null) {
-            AppLog.i(TAG, "Sesión ${sessionId.take(8)} completa: ${s.receivedFragments} fragmentos, ${s.speechMs / 1000} s de voz")
+            AppLog.i(TAG, "Session ${sessionId.take(8)} complete: ${s.receivedFragments} fragments, ${s.speechMs / 1000} s of speech")
             onSessionComplete(sessionId, s.speechMs)
         }
     }
 
-    /** Borra una sesión del móvil: su audio y sus registros. */
+    /** Deletes a session from the phone: its audio and its records. */
     suspend fun delete(sessionId: String) = mutex.withLock {
         File(root, sessionId).deleteRecursively()
         db.sessions().delete(sessionId)
-        AppLog.i(TAG, "Sesión ${sessionId.take(8)} borrada del móvil")
+        AppLog.i(TAG, "Session ${sessionId.take(8)} deleted from the phone")
     }
 
     private companion object {
-        const val TAG = "recepcion"
+        const val TAG = "inbox"
     }
 }

@@ -10,10 +10,10 @@ import kotlinx.coroutines.flow.StateFlow
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Acceso a la bóveda de Obsidian con el Storage Access Framework: el usuario elige la carpeta
- * una vez y la app solo puede tocar lo que hay dentro, sin permiso de almacenamiento general.
+ * Access to the Obsidian vault through the Storage Access Framework: the user picks the folder
+ * once and the app can only touch what's inside, without broad storage permission.
  *
- * Las rutas son relativas a la bóveda y usan «/», como en Obsidian (`Diario/2026-10-16.md`).
+ * Paths are relative to the vault and use "/", as in Obsidian (`Daily/2026-10-16.md`).
  */
 class VaultAccess(context: Context) {
 
@@ -21,8 +21,8 @@ class VaultAccess(context: Context) {
 
     private val appContext = context.applicationContext
     private val resolver = appContext.contentResolver
-    private val prefs = appContext.getSharedPreferences("boveda", Context.MODE_PRIVATE)
-    /** Ruta → id de documento. Evita recorrer el árbol en cada operación. */
+    private val prefs = appContext.getSharedPreferences("vault", Context.MODE_PRIVATE)
+    /** Path → document id. Avoids walking the tree on every operation. */
     private val ids = ConcurrentHashMap<String, String>()
 
     private val _tree = MutableStateFlow(prefs.getString(KEY_TREE, null)?.let(Uri::parse))
@@ -37,15 +37,15 @@ class VaultAccess(context: Context) {
         _tree.value = uri
     }
 
-    /** Nombre legible de la carpeta elegida, p. ej. «Documents/Obsidian/Escriba». */
+    /** Readable name of the chosen folder, e.g. "Documents/Obsidian/Escriba". */
     fun displayPath(): String? = _tree.value?.let { DocumentsContract.getTreeDocumentId(it).substringAfter(':').ifEmpty { "/" } }
 
     fun exists(path: String): Boolean = find(path) != null
 
-    /** URI de un archivo de la bóveda, p. ej. para reproducir su audio. */
+    /** URI of a vault file, e.g. to play its audio. */
     fun uri(path: String): Uri? = runCatching { find(path) }.getOrNull()
 
-    /** Nombre de la bóveda tal como lo ve Obsidian: la última carpeta. */
+    /** The vault's name as Obsidian sees it: the last folder. */
     fun vaultName(): String? = displayPath()?.trimEnd('/')?.substringAfterLast('/')?.ifEmpty { null }
 
     fun list(dir: String): List<Entry> {
@@ -69,14 +69,14 @@ class VaultAccess(context: Context) {
 
     fun writeText(path: String, text: String) = writeBytes(path, text.encodeToByteArray())
 
-    /** Crea o sobrescribe un archivo entero de una vez (así Obsidian y YAOS nunca ven medio archivo). */
+    /** Creates or overwrites a whole file at once (so Obsidian and sync tools never see half a file). */
     fun writeBytes(path: String, bytes: ByteArray) {
         fresh { writeOnce(path, bytes) }
     }
 
     /**
-     * Si alguien borró o movió un archivo desde Obsidian, el id guardado ya no vale: se vacía
-     * la caché y se reintenta una vez recorriendo el árbol de nuevo.
+     * If someone deleted or moved a file from Obsidian, the stored id is no longer valid: the cache
+     * is cleared and it's retried once, walking the tree again.
      */
     private fun <T> fresh(block: () -> T): T = try {
         block()
@@ -89,12 +89,12 @@ class VaultAccess(context: Context) {
         val tree = requireTree()
         val uri = find(path) ?: run {
             val parent = ensureDir(path.substringBeforeLast('/', ""))
-            // octet-stream: así el proveedor no añade ni cambia la extensión del nombre.
+            // octet-stream: so the provider doesn't add or change the name's extension.
             DocumentsContract.createDocument(resolver, DocumentsContract.buildDocumentUriUsingTree(tree, parent), "application/octet-stream", path.substringAfterLast('/'))
                 ?.also { ids[path] = DocumentsContract.getDocumentId(it) }
-                ?: error("No se pudo crear $path")
+                ?: error("Couldn't create $path")
         }
-        resolver.openOutputStream(uri, "wt")?.use { it.write(bytes) } ?: error("No se pudo escribir $path")
+        resolver.openOutputStream(uri, "wt")?.use { it.write(bytes) } ?: error("Couldn't write $path")
     }
 
     fun delete(path: String): Boolean {
@@ -103,7 +103,7 @@ class VaultAccess(context: Context) {
         return DocumentsContract.deleteDocument(resolver, uri)
     }
 
-    /** Crea las carpetas que falten y devuelve el id de la última. */
+    /** Creates the missing folders and returns the id of the last one. */
     fun ensureDir(dir: String): String {
         val tree = requireTree()
         var currentId = rootId(tree)
@@ -114,7 +114,7 @@ class VaultAccess(context: Context) {
             currentId = known ?: children(tree, currentId).firstOrNull { it.name == part && it.isDir }?.id
                 ?: DocumentsContract.createDocument(resolver, DocumentsContract.buildDocumentUriUsingTree(tree, currentId), Document.MIME_TYPE_DIR, part)
                     ?.let(DocumentsContract::getDocumentId)
-                ?: error("No se pudo crear la carpeta $currentPath")
+                ?: error("Couldn't create the folder $currentPath")
             ids[currentPath] = currentId
         }
         return currentId
@@ -152,9 +152,9 @@ class VaultAccess(context: Context) {
 
     private fun rootId(tree: Uri) = DocumentsContract.getTreeDocumentId(tree)
 
-    private fun requireTree() = _tree.value ?: error("No se ha elegido la bóveda")
+    private fun requireTree() = _tree.value ?: error("No vault has been chosen")
 
     private companion object {
-        const val KEY_TREE = "arbol"
+        const val KEY_TREE = "tree"
     }
 }

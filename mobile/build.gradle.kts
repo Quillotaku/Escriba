@@ -9,7 +9,7 @@ plugins {
     alias(libs.plugins.room)
 }
 
-// sherpa-onnx: versión y huella del AAR oficial (ver la tarea descargarSherpaOnnx al final).
+// sherpa-onnx: version and fingerprint of the official AAR (see the downloadSherpaOnnx task at the end).
 val SHERPA_VERSION = "1.13.8"
 val SHERPA_SHA256 = "633c24321e06b1fe79feafa03ea16cbc0f8a286641e2da3559bac91bdb13bd96"
 
@@ -18,47 +18,47 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        // Debe coincidir con el del reloj: la Data Layer solo comunica apps con el mismo id y firma.
+        // Must match the watch's: the Data Layer only connects apps with the same id and signature.
         applicationId = "dev.escriba"
         minSdk = 35
         targetSdk = 36
         versionCode = 100
         versionName = "1.0.0"
-        // Solo el Honor (arm64): sin esto se empaquetarían las bibliotecas de sherpa-onnx de cuatro arquitecturas.
+        // arm64 only: without this, sherpa-onnx's libraries for four architectures would be packaged.
         ndk { abiFilters += "arm64-v8a" }
     }
 
     buildTypes {
         debug {
-            // Cobertura de los tests locales (JaCoCo): ./gradlew :mobile:createDebugUnitTestCoverageReport
+            // Local test coverage (JaCoCo): ./gradlew :mobile:createDebugUnitTestCoverageReport
             enableUnitTestCoverage = true
         }
         release {
-            // R8: la interfaz en Compose va mucho más fluida optimizada.
+            // R8: the Compose UI is much smoother when optimized.
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Misma firma que el reloj (la de depuración): la Data Layer solo une apps con la misma.
+            // Same signature as the watch (the debug one): the Data Layer only links apps that share it.
             signingConfig = signingConfigs.getByName("debug")
         }
     }
 
-    // Robolectric lee los esquemas de Room de los assets de la app (no de los del test): se añaden
-    // solo a la variante debug, la de los tests. La release no los lleva.
+    // Robolectric reads Room's schemas from the app's assets (not the test ones): they're added
+    // only to the debug variant, the one used by tests. The release doesn't carry them.
     sourceSets["debug"].assets.srcDir("$projectDir/schemas")
 
     testOptions {
-        // Robolectric necesita los recursos (fuentes, cadenas) para los tests de Compose.
+        // Robolectric needs the resources (fonts, strings) for the Compose tests.
         unitTests.isIncludeAndroidResources = true
-        // Robolectric toca internos de java.io que el JDK de Android Studio ya no abre por defecto.
+        // Robolectric touches java.io internals that Android Studio's JDK no longer opens by default.
         val robolectricTmp = layout.buildDirectory.dir("tmp/robolectric").get().asFile
         unitTests.all {
             it.jvmArgs(
                 "--add-opens=java.base/java.io=ALL-UNNAMED",
                 "--add-exports=java.base/jdk.internal.access=ALL-UNNAMED",
                 "--enable-native-access=ALL-UNNAMED",
-                // En Windows el temporal del usuario tiene ruta corta (QUILLO~1) y Room compara rutas
-                // de texto: con un temporal dentro del proyecto las rutas coinciden.
+                // On Windows the user's temp folder has a short path (USER~1) and Room compares paths
+                // as text: with a temp folder inside the project the paths match.
                 "-Djava.io.tmpdir=$robolectricTmp",
             )
             it.doFirst { robolectricTmp.mkdirs() }
@@ -79,13 +79,13 @@ dependencies {
     implementation(project(":datalayer"))
     implementation(project(":native"))
     implementation(project(":llm"))
-    // sherpa-onnx (Apache-2.0): diarización, huellas de voz y Parakeet. No se sube al repositorio:
-    // lo descarga la tarea `descargarSherpaOnnx` y se comprueba su SHA-256.
+    // sherpa-onnx (Apache-2.0): diarization, voiceprints and Parakeet. It isn't committed to the
+    // repository: the `downloadSherpaOnnx` task downloads it and checks its SHA-256.
     implementation(files("libs/sherpa-onnx-$SHERPA_VERSION.aar"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
-    // Los servicios de Google traen un fragment antiguo que rompe los permisos con ActivityResult.
+    // Google's services bring an old fragment that breaks permissions with ActivityResult.
     implementation(libs.androidx.fragment)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.work.runtime.ktx)
@@ -112,41 +112,41 @@ dependencies {
     debugImplementation(libs.compose.ui.tooling)
 }
 
-// --- sherpa-onnx: descarga verificada del AAR oficial ---
+// --- sherpa-onnx: verified download of the official AAR ---
 
-abstract class DescargarAar : DefaultTask() {
+abstract class DownloadAar : DefaultTask() {
     @get:Input abstract val url: Property<String>
     @get:Input abstract val sha256: Property<String>
-    @get:OutputFile abstract val destino: RegularFileProperty
+    @get:OutputFile abstract val destination: RegularFileProperty
 
     @TaskAction
-    fun descargar() {
-        val out = destino.get().asFile
+    fun download() {
+        val out = destination.get().asFile
         fun hash(f: File) = MessageDigest.getInstance("SHA-256").digest(f.readBytes()).joinToString("") { "%02x".format(it) }
         if (out.exists() && hash(out) == sha256.get()) return
         out.parentFile.mkdirs()
         val tmp = File(out.parentFile, out.name + ".part")
-        logger.lifecycle("Descargando ${url.get()}")
+        logger.lifecycle("Downloading ${url.get()}")
         URI(url.get()).toURL().openStream().use { input -> tmp.outputStream().use { input.copyTo(it) } }
         val got = hash(tmp)
         if (got != sha256.get()) {
             tmp.delete()
-            throw GradleException("El AAR descargado no coincide con el SHA-256 esperado ($got)")
+            throw GradleException("The downloaded AAR doesn't match the expected SHA-256 ($got)")
         }
         if (out.exists()) out.delete()
-        check(tmp.renameTo(out)) { "No se pudo mover ${tmp.name}" }
+        check(tmp.renameTo(out)) { "Couldn't move ${tmp.name}" }
     }
 }
 
-val descargarSherpaOnnx = tasks.register<DescargarAar>("descargarSherpaOnnx") {
+val downloadSherpaOnnx = tasks.register<DownloadAar>("downloadSherpaOnnx") {
     url = "https://github.com/k2-fsa/sherpa-onnx/releases/download/v$SHERPA_VERSION/sherpa-onnx-$SHERPA_VERSION.aar"
     sha256 = SHERPA_SHA256
-    destino = layout.projectDirectory.file("libs/sherpa-onnx-$SHERPA_VERSION.aar")
+    destination = layout.projectDirectory.file("libs/sherpa-onnx-$SHERPA_VERSION.aar")
 }
 
-tasks.named("preBuild") { dependsOn(descargarSherpaOnnx) }
+tasks.named("preBuild") { dependsOn(downloadSherpaOnnx) }
 
-// Los esquemas de Room se guardan en el repositorio y el plugin se los pasa a los tests de migración.
+// Room's schemas are kept in the repository and the plugin hands them to the migration tests.
 room {
     schemaDirectory("$projectDir/schemas")
 }

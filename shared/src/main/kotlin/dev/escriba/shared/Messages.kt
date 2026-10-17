@@ -3,7 +3,7 @@ package dev.escriba.shared
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
-/** Codificación JSON común a ambos extremos. */
+/** JSON encoding shared by both ends. */
 val EscribaJson: Json = Json {
     ignoreUnknownKeys = true
     encodeDefaults = true
@@ -30,9 +30,8 @@ data class Pong(
 )
 
 /**
- * Tramo de habla dentro de un fragmento. El VAD descarta los silencios, así
- * que el audio queda comprimido en el tiempo: esta tabla permite traducir una
- * posición del audio a la hora real en que se dijo.
+ * A stretch of speech inside a fragment. The VAD drops silences, so the audio is compressed in
+ * time: this table maps a position in the audio to the real time it was said.
  */
 @Serializable
 data class Segment(
@@ -42,8 +41,8 @@ data class Segment(
 )
 
 /**
- * Cabecera que precede a los bytes Ogg/Opus de cada fragmento en el canal.
- * La identidad de un fragmento es [sessionId] + [seq], nunca la hora.
+ * Header that precedes each fragment's Ogg/Opus bytes on the channel.
+ * A fragment's identity is [sessionId] + [seq], never the time.
  */
 @Serializable
 data class FragmentHeader(
@@ -89,7 +88,7 @@ data class SessionEndAck(
     val sessionId: String,
 )
 
-/** Estado del reloj que se envía al móvil con cada lote, para el panel. */
+/** Watch status sent to the phone with every batch, for the dashboard. */
 @Serializable
 data class WatchStatus(
     val phase: String,
@@ -100,7 +99,7 @@ data class WatchStatus(
     val atMs: Long,
 )
 
-// --- Emparejamiento (en claro: solo lleva claves públicas, nonces y compromisos) ---
+// --- Pairing (in plain text: it only carries public keys, nonces and commitments) ---
 
 @Serializable
 data class PairInit(val commit: String, val name: String)
@@ -114,6 +113,6 @@ data class PairReveal(val publicKey: String, val nonce: String)
 @Serializable
 data class PairConfirm(val mac: String)
 
-/** El reloj pide la lista de perfiles (al arrancar o si no tiene ninguna). */
+/** The watch asks for the profile list (on start, or when it has none). */
 @Serializable
 data class ProfilesRequest(val currentHash: String? = null)

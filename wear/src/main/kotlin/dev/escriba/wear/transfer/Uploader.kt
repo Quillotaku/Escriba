@@ -27,9 +27,9 @@ import kotlinx.coroutines.withTimeout
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Envía al móvil los fragmentos pendientes y los finales de sesión, de uno en uno:
- * abre un canal, manda `[cabecera cifrada][audio cifrado]`, espera el ACK y solo entonces
- * borra el fragmento del reloj. Si algo falla, el fragmento sigue ahí para el siguiente intento.
+ * Sends pending fragments and session ends to the phone, one at a time: opens a channel, sends
+ * `[sealed header][sealed audio]`, waits for the ACK and only then deletes the fragment from the
+ * watch. If anything fails, the fragment stays for the next attempt.
  */
 class Uploader(
     private val context: Context,
@@ -73,7 +73,7 @@ class Uploader(
     }
 
     private suspend fun runLocked(manual: Boolean): Outcome {
-        // Las sesiones sin ningún fragmento no le importan al móvil.
+        // Sessions without any fragment don't matter to the phone.
         store.endedSessions().filter { (it.totalFragments ?: 0) == 0 }.forEach { store.deleteEmptySession(it.sessionId) }
 
         val pending = store.pending()
@@ -91,12 +91,12 @@ class Uploader(
         var allOk = true
         for (header in pending) {
             val ok = runCatching { sendFragment(peer, secure, header) }
-                .onFailure { AppLog.e(TAG, "Fallo al enviar el fragmento ${header.key.short()}", it) }
+                .onFailure { AppLog.e(TAG, "Failed to send fragment ${header.key.short()}", it) }
                 .getOrDefault(false)
             if (!ok) {
                 allOk = false
                 _stats.value = _stats.value.copy(failures = _stats.value.failures + 1)
-                break // probablemente se ha ido la conexión: se reintentará más tarde
+                break // the connection is probably gone: it'll be retried later
             }
         }
 
@@ -104,7 +104,7 @@ class Uploader(
             val stillPending = store.pending().map { it.sessionId }.toSet()
             for (session in ended.filter { it.sessionId !in stillPending }) {
                 val ok = runCatching { sendSessionEnd(session.sessionId, session.totalFragments ?: 0, session.endMs ?: 0) }
-                    .onFailure { AppLog.e(TAG, "Fallo al enviar el final de sesión", it) }
+                    .onFailure { AppLog.e(TAG, "Failed to send the session end", it) }
                     .getOrDefault(false)
                 if (!ok) {
                     allOk = false
@@ -131,7 +131,7 @@ class Uploader(
             }
             val received = withTimeout(ACK_TIMEOUT_MS) { ack.await() }
             if (received.sha256 != header.sha256) {
-                AppLog.e(TAG, "ACK con hash distinto para ${header.key.short()}; no se borra")
+                AppLog.e(TAG, "ACK with a different hash for ${header.key.short()}; not deleted")
                 return false
             }
         } finally {
@@ -146,7 +146,7 @@ class Uploader(
             sentBytes = _stats.value.sentBytes + audio.size,
             lastKbps = kbps,
         )
-        AppLog.i(TAG, "Fragmento ${header.key.short()} entregado: ${audio.size / 1024} KB en $elapsed ms ($kbps kbps)")
+        AppLog.i(TAG, "Fragment ${header.key.short()} delivered: ${audio.size / 1024} KB in $elapsed ms ($kbps kbps)")
         return true
     }
 
@@ -159,7 +159,7 @@ class Uploader(
             waitingEndAcks.remove(sessionId)
         }
         store.markEndAcked(sessionId)
-        AppLog.i(TAG, "Final de la sesión ${sessionId.take(8)} entregado ($total fragmentos)")
+        AppLog.i(TAG, "End of session ${sessionId.take(8)} delivered ($total fragments)")
         return true
     }
 
@@ -184,7 +184,7 @@ class Uploader(
     private fun String.short() = substringBefore('-') + "#" + substringAfter('#')
 
     companion object {
-        private const val TAG = "envio"
+        private const val TAG = "upload"
         private const val ACK_TIMEOUT_MS = 30_000L
     }
 }

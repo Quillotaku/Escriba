@@ -10,8 +10,8 @@ import java.io.FileWriter
 import kotlin.random.Random
 
 /**
- * Escribe un fragmento abierto: audio a `<seq>.ogg.part` (Opus en nuestro Ogg) y eventos
- * de segmento a `<seq>.journal`. Ambos se vuelcan a disco sobre la marcha.
+ * Writes an open fragment: audio to `<seq>.ogg.part` (Opus in our own Ogg) and segment events
+ * to `<seq>.journal`. Both are flushed to disk as they go.
  */
 class OpusFragmentWriter(
     private val partFile: File,
@@ -23,7 +23,7 @@ class OpusFragmentWriter(
     private val out = BufferedOutputStream(FileOutputStream(partFile), 16 * 1024)
     private val journalOut = FileWriter(journalFile, true)
     private var ogg: OggOpusWriter? = null
-    /** Paquetes llegados antes del formato (no debería ocurrir, pero no se pierden). */
+    /** Packets that arrived before the format (shouldn't happen, but they aren't lost). */
     private val early = ArrayList<ByteArray>()
 
     private val encoder = OpusEncoder(

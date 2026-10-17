@@ -14,42 +14,41 @@ import java.security.spec.X509EncodedKeySpec
 import javax.crypto.KeyAgreement
 
 /**
- * Emparejamiento reloj ↔ móvil con verificación por código (al estilo de la comparación
- * numérica de Bluetooth). Protege de un intermediario, incluido el propio transporte de GMS.
+ * Watch ↔ phone pairing verified with a code (in the style of Bluetooth numeric comparison).
+ * It protects against a man in the middle, including GMS's own transport.
  *
  * ```
- * reloj (inicia)                                  móvil (responde)
- *   PairInit   { commit = SHA256(pubR ‖ nonceR) }  →
- *              ←  PairReply  { pubM, nonceM }
- *   PairReveal { pubR, nonceR }                    →   comprueba el commit
- *   ambos: ECDH P-256 → HKDF → clave del enlace + código de 6 dígitos
- *   el usuario comprueba que los dos códigos coinciden y confirma en cada pantalla
- *   PairConfirm { HMAC(clave, rol) }               ⇄
+ * watch (initiates)                               phone (responds)
+ *   PairInit   { commit = SHA256(pubW ‖ nonceW) }  →
+ *              ←  PairReply  { pubP, nonceP }
+ *   PairReveal { pubW, nonceW }                    →   checks the commitment
+ *   both: ECDH P-256 → HKDF → link key + 6-digit code
+ *   the user checks both codes match and confirms on each screen
+ *   PairConfirm { HMAC(key, role) }                ⇄
  * ```
  *
- * El compromiso inicial obliga al reloj a fijar su clave antes de ver la del móvil, así que
- * un intermediario no puede ir probando claves hasta que los códigos coincidan: tiene una
- * sola oportunidad entre un millón.
+ * The initial commitment forces the watch to fix its key before seeing the phone's, so a man in
+ * the middle can't keep trying keys until the codes match: they get one chance in a million.
  */
 object Pairing {
 
     private const val CURVE = "secp256r1"
-    private val INFO_KEY = "escriba v1 enlace".encodeToByteArray()
-    private val INFO_SAS = "escriba v1 codigo".encodeToByteArray()
-    const val ROLE_WATCH = "reloj"
-    const val ROLE_PHONE = "movil"
+    private val INFO_KEY = "escriba v1 link".encodeToByteArray()
+    private val INFO_SAS = "escriba v1 code".encodeToByteArray()
+    const val ROLE_WATCH = "watch"
+    const val ROLE_PHONE = "phone"
 
-    /** Resultado de un emparejamiento: la clave del enlace y el código que se muestra al usuario. */
+    /** Result of a pairing: the link key and the code shown to the user. */
     class Result(val key: ByteArray, val code: String) {
         val keyId: String get() = Crypto.hex(Crypto.sha256(key).copyOf(8))
 
-        fun confirm(role: String) = PairConfirm(Crypto.b64(Crypto.hmacSha256(key, "confirmar:$role".encodeToByteArray())))
+        fun confirm(role: String) = PairConfirm(Crypto.b64(Crypto.hmacSha256(key, "confirm:$role".encodeToByteArray())))
 
         fun verify(peerRole: String, confirm: PairConfirm): Boolean =
             Crypto.constantTimeEquals(Crypto.unb64(confirm.mac), Crypto.unb64(confirm(peerRole).mac))
     }
 
-    /** Lado del reloj. */
+    /** Watch side. */
     class Initiator(private val name: String) {
         private val keyPair = generateKeyPair()
         private val nonce = Crypto.randomBytes(16)
@@ -65,7 +64,7 @@ object Pairing {
         }
     }
 
-    /** Lado del móvil. */
+    /** Phone side. */
     class Responder(private val name: String) {
         private val keyPair = generateKeyPair()
         private val nonce = Crypto.randomBytes(16)
@@ -78,11 +77,11 @@ object Pairing {
         }
 
         fun onReveal(reveal: PairReveal): Result {
-            val expected = commit ?: throw GeneralSecurityException("Revelación sin compromiso previo")
+            val expected = commit ?: throw GeneralSecurityException("Reveal without a prior commitment")
             val peerPublic = Crypto.unb64(reveal.publicKey)
             val peerNonce = Crypto.unb64(reveal.nonce)
             if (!Crypto.constantTimeEquals(expected, Crypto.sha256(peerPublic, peerNonce))) {
-                throw GeneralSecurityException("La clave del reloj no coincide con su compromiso")
+                throw GeneralSecurityException("The watch's key doesn't match its commitment")
             }
             return derive(keyPair, peerPublic, watchPublic = peerPublic, phonePublic = publicKey, watchNonce = peerNonce, phoneNonce = nonce)
         }
@@ -105,7 +104,7 @@ object Pairing {
             doPhase(peerPublic, true)
             generateSecret()
         }
-        // Todo el intercambio queda ligado a la clave: ambas claves públicas y ambos nonces.
+        // The whole exchange is bound to the key: both public keys and both nonces.
         val salt = watchNonce + phoneNonce
         val transcript = Crypto.sha256(watchPublic, phonePublic)
         val key = Crypto.hkdf(secret, salt, INFO_KEY + transcript, 32)

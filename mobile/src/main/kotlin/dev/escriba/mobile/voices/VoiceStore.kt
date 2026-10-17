@@ -10,8 +10,8 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /**
- * Voces registradas. Una huella de voz es un dato biométrico: vive solo en la base de datos
- * privada del móvil, nunca en la bóveda ni en el reloj, y se puede borrar desde la app.
+ * Enrolled voices. A voiceprint is biometric data: it lives only in the phone's private database,
+ * never in the vault or on the watch, and it can be deleted from the app.
  */
 class VoiceStore(private val db: EscribaDb) {
 
@@ -20,31 +20,31 @@ class VoiceStore(private val db: EscribaDb) {
     suspend fun names(): List<String> = db.sessions().voices().map { it.name }
 
     /**
-     * Registra [embedding] con el nombre [name]. Si la voz ya existía, se promedia con lo que ya
-     * se tenía: cuantas más sesiones, más fiable el reconocimiento.
+     * Enrolls [embedding] under the name [name]. If the voice already existed, it's averaged with
+     * what was there: the more sessions, the more reliable the recognition.
      */
     suspend fun enroll(name: String, embedding: FloatArray) {
         val dao = db.sessions()
         val existing = dao.voice(name)
         val merged = if (existing == null) embedding else {
             val old = decode(existing.embedding)
-            // Media ponderada por el número de muestras que ya tenía.
+            // Average weighted by the number of samples it already had.
             val n = existing.samples.toFloat()
             val a = VoiceMath.average(listOf(old))
             val b = VoiceMath.average(listOf(embedding))
             FloatArray(a.size) { (a[it] * n + b[it]) / (n + 1) }
         }
         dao.upsertVoice(VoiceEntity(name, encode(merged), (existing?.samples ?: 0) + 1, System.currentTimeMillis()))
-        AppLog.i(TAG, "Voz «$name» ${if (existing == null) "registrada" else "actualizada (${existing.samples + 1} muestras)"}")
+        AppLog.i(TAG, "Voice \"$name\" ${if (existing == null) "enrolled" else "updated (${existing.samples + 1} samples)"}")
     }
 
     suspend fun delete(name: String) {
         db.sessions().deleteVoice(name)
-        AppLog.i(TAG, "Voz «$name» borrada")
+        AppLog.i(TAG, "Voice \"$name\" deleted")
     }
 
     companion object {
-        private const val TAG = "voces"
+        private const val TAG = "voices"
 
         fun encode(e: FloatArray): String {
             val buffer = ByteBuffer.allocate(e.size * 4).order(ByteOrder.LITTLE_ENDIAN)

@@ -18,40 +18,40 @@ import dev.escriba.wear.recorder.RecorderService
 import dev.escriba.wear.recorder.RecordingState
 
 /**
- * Complicación de Escriba: el perfil activo y si se está grabando. Un toque empieza o para la
- * grabación con ese perfil.
+ * Escriba's complication: the active profile and whether it's recording. A tap starts or stops
+ * recording with that profile.
  *
- * El toque pasa por QuickStartActivity: en la fase 1 se vio que arrancar el servicio de
- * micrófono directamente desde la esfera no funciona en HyperOS (se bloquea sin avisar).
+ * The tap goes through QuickStartActivity: starting the microphone service directly from the
+ * watch face doesn't work on HyperOS (it's silently blocked).
  */
 class RecordingComplicationService : SuspendingComplicationDataSourceService() {
 
     override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData {
         val profile = (application as EscribaWearApp).profiles.selected.value
-        AppLog.i("compl", "La esfera pide datos: ${RecordingState.phase.value.name.lowercase()}, perfil ${profile?.name}")
+        AppLog.i("compl", "The watch face asks for data: ${RecordingState.phase.value.name.lowercase()}, profile ${profile?.name}")
         return build(RecordingState.phase.value, profile?.name)
     }
 
     override fun getPreviewData(type: ComplicationType): ComplicationData? =
-        if (type == ComplicationType.SHORT_TEXT) build(RecordingState.Phase.IDLE, "Casual") else null
+        if (type == ComplicationType.SHORT_TEXT) build(RecordingState.Phase.IDLE, getString(R.string.compl_preview_profile)) else null
 
     private fun build(phase: RecordingState.Phase, profileName: String?): ShortTextComplicationData {
         val tap = PendingIntent.getActivity(
             this,
             0,
             Intent(this, QuickStartActivity::class.java)
-                .putExtra(RecorderService.EXTRA_ORIGIN, "complicacion")
+                .putExtra(RecorderService.EXTRA_ORIGIN, "complication")
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val name = (profileName ?: "Escriba").take(7)
-        // Muchas esferas (las de Xiaomi incluidas) no muestran el título: el estado va en el texto
-        // principal y en el icono, y el nombre del perfil queda como título por si la esfera lo enseña.
+        val name = (profileName ?: getString(R.string.app_name)).take(7)
+        // Many watch faces (Xiaomi's included) don't show the title: the state goes in the main
+        // text and the icon, and the profile name stays as the title in case the face shows it.
         data class Look(val text: String, val title: String?, val icon: Int, val description: String)
         val look = when (phase) {
-            RecordingState.Phase.CAPTURING -> Look("REC", name, R.drawable.ic_rec, "Escriba graba con el perfil ${profileName ?: ""}. Toca para parar.")
-            RecordingState.Phase.PAUSED -> Look("pausa", name, R.drawable.ic_mic, "Escriba en pausa por el horario")
-            RecordingState.Phase.IDLE -> Look(name, null, R.drawable.ic_mic, "Escriba parado. Perfil ${profileName ?: "sin elegir"}. Toca para grabar.")
+            RecordingState.Phase.CAPTURING -> Look("REC", name, R.drawable.ic_rec, getString(R.string.compl_recording_desc, profileName ?: ""))
+            RecordingState.Phase.PAUSED -> Look(getString(R.string.compl_paused), name, R.drawable.ic_mic, getString(R.string.compl_paused_desc))
+            RecordingState.Phase.IDLE -> Look(name, null, R.drawable.ic_mic, getString(R.string.compl_idle_desc, profileName ?: getString(R.string.compl_no_profile)))
         }
         return ShortTextComplicationData.Builder(
             text = PlainComplicationText.Builder(look.text).build(),

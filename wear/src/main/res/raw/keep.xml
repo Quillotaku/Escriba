@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Recursos que el reductor de R8 no debe quitar aunque el código no los use: la capacidad de la
-  Data Layer la lee Google Play Services por su nombre. Sin ella, ni el móvil ni el reloj se
-  encuentran para emparejarse.
+  Resources R8's shrinker must not remove even though the code doesn't use them: Google Play
+  Services reads the Data Layer capability by name. Without it, neither the phone nor the watch
+  can find the other to pair.
 -->
 <resources xmlns:tools="http://schemas.android.com/tools"
     tools:keep="@array/android_wear_capabilities" />

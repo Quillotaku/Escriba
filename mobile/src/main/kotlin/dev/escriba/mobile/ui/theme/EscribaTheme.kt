@@ -32,11 +32,11 @@ import kotlinx.coroutines.flow.StateFlow
 import dev.escriba.mobile.R
 
 /*
- * Tema de Escriba (sistema de diseño «Escriba»): papel y tinta ferrogálica, lapislázuli para la
- * acción, minio solo para grabar. Los valores salen de tokens.json; aquí no se inventa ninguno.
+ * Escriba's theme (the "Escriba" design system): paper and iron-gall ink, lapis for action,
+ * minium only for recording. The values come from tokens.json; none is invented here.
  */
 
-/** Colores que Material 3 no tiene: estados y perfiles. */
+/** Colours Material 3 doesn't have: states and profiles. */
 @Immutable
 data class EscribaColors(
     val paper: Color,
@@ -59,7 +59,7 @@ data class EscribaColors(
     val danger: Color,
     val dangerSoft: Color,
     val focus: Color,
-    /** pino, lapis, ocre, ciruela, pizarra, teja. */
+    /** pine, lapis, ochre, plum, slate, terracotta. */
     val profiles: List<Color>,
 )
 
@@ -116,15 +116,15 @@ private fun EscribaColors.scheme(dark: Boolean): ColorScheme {
 }
 
 /**
- * Familias de la marca, empaquetadas (OFL, licencias en docs/licencias): la app no tiene permiso
- * de Internet, así que no se descargan. Las tres son variables: cada peso es una instancia.
+ * The brand's font families, bundled (OFL, licenses in docs/licenses): the app has no Internet
+ * permission, so they aren't downloaded. All three are variable: each weight is an instance.
  */
 @OptIn(ExperimentalTextApi::class)
 object EscribaFonts {
     private fun variable(res: Int, weight: FontWeight, vararg extra: FontVariation.Setting) =
         Font(res, weight, variationSettings = FontVariation.Settings(FontVariation.weight(weight.weight), *extra))
 
-    /** Literata con tamaño óptico de titular. */
+    /** Literata with the display optical size. */
     val display: FontFamily = FontFamily(
         variable(R.font.literata, FontWeight.Medium, FontVariation.Setting("opsz", 24f)),
         variable(R.font.literata, FontWeight.SemiBold, FontVariation.Setting("opsz", 24f)),
@@ -143,7 +143,7 @@ object EscribaFonts {
     )
 }
 
-/** Estilos sin equivalente en Material 3. */
+/** Styles with no Material 3 equivalent. */
 @Immutable
 data class EscribaType(
     val time: TextStyle,
@@ -153,7 +153,7 @@ data class EscribaType(
 
 private val type = EscribaType(
     time = TextStyle(fontFamily = EscribaFonts.mono, fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium, fontFeatureSettings = "tnum"),
-    // Cifra grande en la sans con números tabulares: en mono «3 h 55 min» se lee como una máquina de escribir.
+    // Large figure in the sans with tabular numbers: in mono "3 h 55 min" reads like a typewriter.
     metric = TextStyle(fontFamily = EscribaFonts.sans, fontSize = 30.sp, lineHeight = 36.sp, fontWeight = FontWeight.SemiBold, fontFeatureSettings = "tnum"),
     overline = TextStyle(fontFamily = EscribaFonts.sans, fontSize = 11.sp, lineHeight = 16.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.08.em),
 )
@@ -185,7 +185,7 @@ private val shapes = Shapes(
     extraLarge = RoundedCornerShape(24.dp),
 )
 
-/** Rejilla de 4 dp del sistema de diseño. */
+/** The design system's 4 dp grid. */
 object Space {
     val s1 = 4.dp
     val s2 = 8.dp
@@ -223,14 +223,14 @@ fun EscribaTheme(dark: Boolean, content: @Composable () -> Unit) {
 }
 
 /**
- * Apariencia elegida por el usuario (Ajustes → Apariencia): «Claro» u «Oscuro». Hasta que elige,
- * sigue al sistema.
+ * Appearance chosen by the user (Settings → Appearance): "Light" or "Dark". Until they choose, it
+ * follows the system.
  */
 class Appearance(context: Context) {
-    private val prefs = context.getSharedPreferences("apariencia", Context.MODE_PRIVATE)
+    private val prefs = context.getSharedPreferences("appearance", Context.MODE_PRIVATE)
     private val _dark = MutableStateFlow(if (prefs.contains(KEY)) prefs.getBoolean(KEY, false) else null)
 
-    /** `null` mientras el usuario no haya elegido. */
+    /** `null` while the user hasn't chosen. */
     val dark: StateFlow<Boolean?> = _dark
 
     fun set(dark: Boolean) {
@@ -239,7 +239,7 @@ class Appearance(context: Context) {
     }
 
     private companion object {
-        const val KEY = "oscuro"
+        const val KEY = "dark"
     }
 }
 

@@ -2,7 +2,7 @@ package dev.escriba.nativeml
 
 import java.io.Closeable
 
-/** Llamadas JNI a whisper.cpp (whisper_jni.cpp). */
+/** JNI calls into whisper.cpp (whisper_jni.cpp). */
 internal object WhisperNative {
     init {
         System.loadLibrary("escriba_native")
@@ -17,23 +17,23 @@ internal object WhisperNative {
     external fun nativeTranscribe(handle: Long, pcm: FloatArray, language: String, prompt: String?, threads: Int, beamSize: Int, fast: Boolean): Array<String>?
 }
 
-/** Segmento transcrito, con tiempos en ms relativos al inicio del audio transcrito. */
+/** A transcribed segment, with times in ms relative to the start of the transcribed audio. */
 data class WhisperSegment(val startMs: Long, val endMs: Long, val noSpeechProb: Float, val text: String)
 
-/** Desglose de tiempos de whisper.cpp (ms) de la última transcripción. */
+/** whisper.cpp's timing breakdown (ms) for the last transcription. */
 data class WhisperTimings(val encodeMs: Float, val decodeMs: Float, val batchMs: Float, val promptMs: Float, val sampleMs: Float)
 
 /**
- * Un modelo Whisper cargado. Ocupa cientos de MB: se carga para una tanda de trabajo y se
- * libera al terminar, antes de cargar otro modelo (p. ej. el LLM en la fase 7).
+ * A loaded Whisper model. It takes hundreds of MB: it's loaded for a batch of work and released
+ * when done, before another model (e.g. the LLM) is loaded.
  *
- * No es seguro usarlo desde varios hilos a la vez.
+ * Not safe to use from several threads at once.
  */
 class WhisperEngine private constructor(private var handle: Long, val modelName: String) : Closeable {
 
     /**
-     * Transcribe PCM float 16 kHz mono. [threads] por defecto: los núcleos rápidos, dejando
-     * margen al sistema (ggml espera al hilo más lento en cada operación).
+     * Transcribes 16 kHz mono float PCM. Default [threads]: the fast cores, leaving room for the
+     * system (ggml waits for the slowest thread on every operation).
      */
     fun transcribe(
         pcm: FloatArray,
@@ -41,12 +41,12 @@ class WhisperEngine private constructor(private var handle: Long, val modelName:
         prompt: String? = null,
         threads: Int = defaultThreads(),
         beamSize: Int = 1,
-        /** Un solo candidato y sin reintentos con temperatura: mucho más rápido, algo menos robusto. */
+        /** A single candidate and no temperature fallback: much faster, slightly less robust. */
         fast: Boolean = false,
     ): List<WhisperSegment> {
-        check(handle != 0L) { "Modelo liberado" }
+        check(handle != 0L) { "Model released" }
         val lines = WhisperNative.nativeTranscribe(handle, pcm, language, prompt, threads, beamSize, fast)
-            ?: throw IllegalStateException("whisper.cpp no pudo transcribir (¿cancelado?)")
+            ?: throw IllegalStateException("whisper.cpp couldn't transcribe (cancelled?)")
         return lines.mapNotNull { line ->
             val parts = line.split('\t', limit = 4)
             if (parts.size < 4) return@mapNotNull null
@@ -54,7 +54,7 @@ class WhisperEngine private constructor(private var handle: Long, val modelName:
         }
     }
 
-    /** Tiempos de la última llamada a [transcribe]. */
+    /** Timings of the last call to [transcribe]. */
     fun timings(): WhisperTimings? {
         val parts = WhisperNative.nativeTimings(handle)?.split(',')?.mapNotNull { it.toFloatOrNull() } ?: return null
         if (parts.size < 5) return null
@@ -70,12 +70,12 @@ class WhisperEngine private constructor(private var handle: Long, val modelName:
 
     companion object {
         /**
-         * Carga un modelo ggml desde un descriptor abierto (un archivo elegido con SAF). Se lee
-         * por el descriptor, no por su ruta: la ruta exigiría permiso de almacenamiento general.
+         * Loads a ggml model from an open descriptor (a file picked with SAF). It's read through the
+         * descriptor, not its path: the path would require broad storage permission.
          */
         fun load(fd: Int, modelName: String, flashAttn: Boolean = true): WhisperEngine {
             val handle = WhisperNative.nativeInitFd(fd, flashAttn)
-            check(handle != 0L) { "No se pudo cargar el modelo $modelName" }
+            check(handle != 0L) { "Couldn't load the model $modelName" }
             return WhisperEngine(handle, modelName)
         }
 

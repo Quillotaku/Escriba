@@ -12,19 +12,40 @@ import dev.escriba.shared.toWire
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
-/** Estado del emparejamiento, para la UI de cada app. */
+/** What a device is waiting for while pairing. Each app shows it with its own string resources. */
+enum class PairingWait {
+    /** Watch: the request went out; the user has to tap "Pair" on the phone. */
+    PHONE,
+
+    /** Phone: the window is open; the user has to tap "Pair" on the watch. */
+    WATCH,
+
+    /** Phone: keys exchanged, the code is being computed. */
+    CODE,
+}
+
+/** Why pairing failed. Each app shows it with its own string resources. */
+enum class PairingFailure {
+    NO_NEARBY_PHONE,
+    NOT_DIRECTLY_CONNECTED,
+    /** The watch revealed a key that doesn't match its commitment: possible man in the middle. */
+    COMMITMENT_MISMATCH,
+    BAD_CONFIRMATION,
+}
+
+/** Pairing state, for each app's UI. */
 sealed interface PairingState {
     data object Idle : PairingState
-    data class Waiting(val message: String) : PairingState
+    data class Waiting(val wait: PairingWait) : PairingState
     data class Code(val code: String, val peerName: String, val localConfirmed: Boolean, val peerConfirmed: Boolean) : PairingState
     data class Done(val peer: PairedPeer) : PairingState
-    data class Failed(val reason: String) : PairingState
+    data class Failed(val reason: PairingFailure) : PairingState
 }
 
 /**
- * Lleva el protocolo de [Pairing] sobre la Data Layer. El reloj inicia; el móvil responde
- * solo si el usuario ha abierto antes la ventana de emparejamiento (2 minutos), para que
- * nadie pueda emparejarse sin que el usuario lo pida en las dos pantallas.
+ * Runs the [Pairing] protocol over the Data Layer. The watch initiates; the phone only answers if
+ * the user opened the pairing window first (2 minutes), so nobody can pair without the user asking
+ * for it on both screens.
  */
 class PairingCoordinator(
     private val link: DataLayerLink,
@@ -37,8 +58,8 @@ class PairingCoordinator(
     private val _peerLost = MutableStateFlow(false)
 
     /**
-     * El dispositivo emparejado dice que ya no nos reconoce (borró sus datos o se emparejó con
-     * otro). No se borra nada: la UI pide volver a emparejar.
+     * The paired device says it doesn't recognize us any more (its data was cleared, or it paired
+     * with another device). Nothing is deleted: the UI asks to pair again.
      */
     val peerLost: StateFlow<Boolean> = _peerLost
 
@@ -64,32 +85,32 @@ class PairingCoordinator(
         link.handle(Protocol.PATH_PAIR_CONFIRM, ::onConfirm)
         link.handle(Protocol.PATH_PAIR_UNKNOWN) { event ->
             if (event.sourceNodeId == link.keys.peer.value?.nodeId && !_peerLost.value) {
-                AppLog.e(TAG, "El ${if (isWatch) "móvil" else "reloj"} ya no reconoce el emparejamiento: hay que volver a emparejar")
+                AppLog.e(TAG, "The ${if (isWatch) "phone" else "watch"} no longer recognizes the pairing: pair again")
                 _peerLost.value = true
             }
         }
     }
 
-    /** Reloj: empieza el emparejamiento con el móvil cercano. */
+    /** Watch: starts pairing with the nearby phone. */
     suspend fun startAsWatch() {
         reset()
-        val peer = link.nearbyPeerWithApp() ?: return fail("No hay ningún móvil cercano con Escriba")
+        val peer = link.nearbyPeerWithApp() ?: return fail(PairingFailure.NO_NEARBY_PHONE)
         val init = Pairing.Initiator(deviceName).also { initiator = it }
         peerNode = peer.id
         peerName = peer.name
-        _state.value = PairingState.Waiting("Esperando al móvil… Abre Escriba en el móvil y pulsa «Emparejar».")
+        _state.value = PairingState.Waiting(PairingWait.PHONE)
         link.sendPlain(peer.id, Protocol.PATH_PAIR_INIT, init.start().toWire())
-        AppLog.i(TAG, "Solicitud de emparejamiento enviada a ${peer.name}")
+        AppLog.i(TAG, "Pairing request sent to ${peer.name}")
     }
 
-    /** Móvil: acepta solicitudes durante 2 minutos. */
+    /** Phone: accepts requests for 2 minutes. */
     fun openWindowAsPhone() {
         reset()
         windowUntil = System.currentTimeMillis() + WINDOW_MS
-        _state.value = PairingState.Waiting("Pulsa «Emparejar» en el reloj.")
+        _state.value = PairingState.Waiting(PairingWait.WATCH)
     }
 
-    /** El usuario confirma que los dos códigos coinciden. */
+    /** The user confirms that both codes match. */
     suspend fun confirm() {
         val r = result ?: return
         val node = peerNode ?: return
@@ -106,16 +127,16 @@ class PairingCoordinator(
 
     private suspend fun onInit(event: MessageEvent) {
         if (System.currentTimeMillis() > windowUntil) {
-            AppLog.i(TAG, "Solicitud de emparejamiento ignorada: abre Escriba en el móvil y pulsa «Emparejar»")
+            AppLog.i(TAG, "Pairing request ignored: open Escriba on the phone and tap \"Pair\"")
             return
         }
-        if (!link.isNearby(event.sourceNodeId)) return fail("El reloj no está conectado directamente")
+        if (!link.isNearby(event.sourceNodeId)) return fail(PairingFailure.NOT_DIRECTLY_CONNECTED)
         val init: PairInit = event.data.fromWire()
         val r = Pairing.Responder(deviceName).also { responder = it }
         peerNode = event.sourceNodeId
         peerName = init.name
         link.sendPlain(event.sourceNodeId, Protocol.PATH_PAIR_REPLY, r.onInit(init).toWire())
-        _state.value = PairingState.Waiting("Calculando el código…")
+        _state.value = PairingState.Waiting(PairingWait.CODE)
     }
 
     private suspend fun onReply(event: MessageEvent) {
@@ -133,9 +154,7 @@ class PairingCoordinator(
         val r = responder ?: return
         if (event.sourceNodeId != peerNode) return
         val reveal: PairReveal = event.data.fromWire()
-        result = runCatching { r.onReveal(reveal) }.getOrElse {
-            return fail("El reloj no cumplió su compromiso: posible intermediario. Vuelve a intentarlo.")
-        }
+        result = runCatching { r.onReveal(reveal) }.getOrElse { return fail(PairingFailure.COMMITMENT_MISMATCH) }
         publishCode()
     }
 
@@ -143,7 +162,7 @@ class PairingCoordinator(
         val r = result ?: return
         if (event.sourceNodeId != peerNode) return
         val confirm: PairConfirm = event.data.fromWire()
-        if (!r.verify(peerRole, confirm)) return fail("La confirmación del otro dispositivo no es válida")
+        if (!r.verify(peerRole, confirm)) return fail(PairingFailure.BAD_CONFIRMATION)
         peerConfirmed = true
         publishCode()
         maybeFinish()
@@ -161,13 +180,13 @@ class PairingCoordinator(
         val peer = PairedPeer(node, peerName, r.keyId, System.currentTimeMillis())
         link.keys.save(peer, r.key)
         _peerLost.value = false
-        AppLog.i(TAG, "Emparejado con $peerName (clave ${r.keyId})")
+        AppLog.i(TAG, "Paired with $peerName (key ${r.keyId})")
         reset()
         _state.value = PairingState.Done(peer)
     }
 
-    private fun fail(reason: String) {
-        AppLog.e(TAG, "Emparejamiento: $reason")
+    private fun fail(reason: PairingFailure) {
+        AppLog.e(TAG, "Pairing failed: $reason")
         reset()
         _state.value = PairingState.Failed(reason)
     }
@@ -184,7 +203,7 @@ class PairingCoordinator(
     }
 
     private companion object {
-        const val TAG = "enlace"
+        const val TAG = "link"
         const val WINDOW_MS = 2 * 60_000L
     }
 }

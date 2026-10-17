@@ -15,8 +15,8 @@ import dev.escriba.shared.vault.ProfilePalette
 import dev.escriba.wear.R
 
 /*
- * Tema «watch» del sistema de diseño de Escriba: negro puro para la pantalla OLED, lapislázuli
- * para lo que se toca y minio solo para grabar. Siempre el mismo: el reloj no tiene tema claro.
+ * The "watch" theme of Escriba's design system: pure black for the OLED screen, lapis for what
+ * can be touched and minium only for recording. Always the same: the watch has no light theme.
  */
 
 private fun c(hex: Long) = Color(0xFF000000 or hex)
@@ -41,7 +41,7 @@ object WatchColors {
     val danger = c(0xff94a6)
     val dangerSoft = c(0x3b1520)
 
-    /** pino, lapislázuli, ocre, ciruela, pizarra, teja (valores del tema reloj). */
+    /** pine, lapis, ochre, plum, slate, terracotta (watch theme values). */
     private val profiles = listOf(c(0x7fcf8e), c(0xa3b8f5), c(0xf0b65c), c(0xe19ad8), c(0xa9bccc), c(0xf2a07f))
 
     fun profile(hex: String?): Color = ProfilePalette.nearest(hex)?.let { profiles[it] } ?: inkMuted
@@ -51,7 +51,7 @@ object WatchColors {
 private fun variable(res: Int, weight: FontWeight) =
     Font(res, weight, variationSettings = FontVariation.Settings(FontVariation.weight(weight.weight)))
 
-/** Atkinson Hyperlegible Next: hecha para leerse de un vistazo, también en la muñeca. */
+/** Atkinson Hyperlegible Next: made to be read at a glance, on the wrist too. */
 val WatchSans = FontFamily(
     variable(R.font.atkinson_next, FontWeight.Normal),
     variable(R.font.atkinson_next, FontWeight.Medium),
@@ -59,7 +59,7 @@ val WatchSans = FontFamily(
     variable(R.font.atkinson_next, FontWeight.Bold),
 )
 
-/** Para el tiempo grabado: cifras de ancho fijo que no bailan al cambiar. */
+/** For the recorded time: fixed-width digits that don't jump around as they change. */
 val WatchMono = FontFamily(
     variable(R.font.atkinson_mono, FontWeight.Medium),
     variable(R.font.atkinson_mono, FontWeight.SemiBold),

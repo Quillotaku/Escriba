@@ -21,7 +21,7 @@ import kotlinx.coroutines.tasks.await
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
-/** Nodo remoto tal y como lo ve la Data Layer. */
+/** A remote node as the Data Layer sees it. */
 data class Peer(
     val id: String,
     val name: String,
@@ -30,19 +30,19 @@ data class Peer(
 )
 
 /**
- * Enlace con el otro dispositivo por la Wearable Data Layer.
+ * Link with the other device over the Wearable Data Layer.
  *
- * Reglas de privacidad:
- *  - solo se envía a nodos con `isNearby == true`, es decir, conectados directamente
- *    (Bluetooth). Si el único camino es la nube de Google, no se envía nada;
- *  - todo lo que no sea el ping o el emparejamiento va cifrado con la clave del enlace
+ * Privacy rules:
+ *  - messages only go to nodes with `isNearby == true`, i.e. directly connected (Bluetooth). If
+ *    the only route is Google's cloud, nothing is sent;
+ *  - everything except the ping and pairing is encrypted with the link key
  *    ([sendSealed] / [openSealed]).
  */
 class DataLayerLink(
     context: Context,
-    /** "wear" o "mobile"; viaja en los mensajes para el diagnóstico. */
+    /** "wear" or "mobile"; it travels in the messages for diagnostics. */
     private val origin: String,
-    /** Capacidad que anuncia la app del otro extremo. */
+    /** Capability announced by the app on the other end. */
     private val peerCapability: String,
 ) {
     private val appContext = context.applicationContext
@@ -53,16 +53,16 @@ class DataLayerLink(
     val keys = LinkKeyStore(appContext)
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    /** El mismo mensaje puede llegar por las dos vías; se procesa una sola vez. */
+    /** The same message may arrive both ways; it's processed only once. */
     private val seen = LinkedHashSet<String>()
     private val handlers = ConcurrentHashMap<String, suspend (MessageEvent) -> Unit>()
 
-    /** Registra quién atiende una ruta. Lo usan el emparejamiento y la transferencia. */
+    /** Registers who handles a path. Used by pairing and by the transfer. */
     fun handle(path: String, handler: suspend (MessageEvent) -> Unit) {
         handlers[path] = handler
     }
 
-    /** Todos los nodos conectados, marcando cuáles tienen Escriba instalada. */
+    /** Every connected node, marking which ones have Escriba installed. */
     suspend fun peers(): List<Peer> {
         val connected = nodes.connectedNodes.await()
         val withApp = capabilities
@@ -74,25 +74,25 @@ class DataLayerLink(
         return connected.map { Peer(it.id, it.displayName, it.isNearby, it.id in withApp) }
     }
 
-    /** El dispositivo emparejado, solo si está conectado directamente. */
+    /** The paired device, only if it's directly connected. */
     suspend fun nearbyPairedPeer(): Peer? {
         val paired = keys.peer.value ?: return null
         return peers().firstOrNull { it.id == paired.nodeId && it.nearby }
     }
 
-    /** El primer nodo cercano con Escriba (para emparejar). */
+    /** The first nearby node with Escriba (for pairing). */
     suspend fun nearbyPeerWithApp(): Peer? = peers().firstOrNull { it.nearby && it.hasEscriba }
 
     suspend fun isNearby(nodeId: String): Boolean =
         nodes.connectedNodes.await().any { it.id == nodeId && it.isNearby }
 
-    /** Envío en claro: solo para el ping y el emparejamiento. */
+    /** Plain sending: only for the ping and pairing. */
     suspend fun sendPlain(nodeId: String, path: String, data: ByteArray) {
-        check(isNearby(nodeId)) { "El otro dispositivo no está conectado directamente" }
+        check(isNearby(nodeId)) { "The other device isn't directly connected" }
         messages.sendMessage(nodeId, path, data).await()
     }
 
-    /** Envía [payload] cifrado al dispositivo emparejado. Devuelve false si no está cerca o no hay enlace. */
+    /** Sends [payload] encrypted to the paired device. Returns false if it isn't near or there's no link. */
     suspend inline fun <reified T> sendSealed(path: String, payload: T): Boolean {
         val channel = keys.channel() ?: return false
         val peer = nearbyPairedPeer() ?: return false
@@ -106,21 +106,21 @@ class DataLayerLink(
         messages.sendMessage(nodeId, path, data).await()
     }
 
-    /** Descifra un mensaje recibido. Rechaza lo que no venga del dispositivo emparejado. */
+    /** Decrypts a received message. Rejects anything that doesn't come from the paired device. */
     inline fun <reified T> openSealed(event: MessageEvent): T {
-        val peer = keys.peer.value ?: error("Mensaje cifrado sin enlace")
-        check(event.sourceNodeId == peer.nodeId) { "Mensaje de un nodo no emparejado" }
-        val channel = keys.channel() ?: error("Clave del enlace no disponible")
+        val peer = keys.peer.value ?: error("Sealed message without a link")
+        check(event.sourceNodeId == peer.nodeId) { "Message from an unpaired node" }
+        val channel = keys.channel() ?: error("Link key not available")
         return EscribaJson.decodeFromString(channel.open(event.path, event.data).decodeToString())
     }
 
-    /** Envía un ping a cada nodo cercano con Escriba. Devuelve a cuántos se envió. */
+    /** Pings every nearby node with Escriba. Returns how many were pinged. */
     suspend fun pingNearby(): Int {
         val all = peers()
-        AppLog.i(TAG, "Nodos: " + all.joinToString { "${it.name}(cercano=${it.nearby}, app=${it.hasEscriba})" }.ifEmpty { "ninguno" })
+        AppLog.i(TAG, "Nodes: " + all.joinToString { "${it.name}(nearby=${it.nearby}, app=${it.hasEscriba})" }.ifEmpty { "none" })
         val targets = all.filter { it.nearby && it.hasEscriba }
         all.filter { it.hasEscriba && !it.nearby }.forEach {
-            AppLog.i(TAG, "No se envía a ${it.name}: no está conectado directamente")
+            AppLog.i(TAG, "Not sending to ${it.name}: not directly connected")
         }
         for (peer in targets) {
             val ping = Ping(id = UUID.randomUUID().toString().take(8), sentAtMs = System.currentTimeMillis(), origin = origin)
@@ -131,14 +131,14 @@ class DataLayerLink(
     }
 
     /**
-     * Escucha directa mientras la app está en pantalla. Sirve de respaldo y de diagnóstico:
-     * si un mensaje llega por aquí pero nunca por el servicio, el sistema del fabricante está
-     * impidiendo que GMS despierte la app en segundo plano.
+     * Direct listener while the app is on screen. It's a fallback and a diagnostic: if a message
+     * arrives here but never through the service, the manufacturer's system is stopping GMS from
+     * waking the app in the background.
      */
     private val foregroundListener = MessageClient.OnMessageReceivedListener { event ->
         scope.launch {
-            runCatching { onMessage(event, via = "app abierta") }
-                .onFailure { AppLog.e(TAG, "Fallo al procesar ${event.path}", it) }
+            runCatching { onMessage(event, via = "open app") }
+                .onFailure { AppLog.e(TAG, "Failed to process ${event.path}", it) }
         }
     }
 
@@ -150,7 +150,7 @@ class DataLayerLink(
         messages.removeListener(foregroundListener)
     }
 
-    /** Punto de entrada común: el WearableListenerService y la escucha en primer plano. */
+    /** Common entry point: the WearableListenerService and the foreground listener. */
     suspend fun onMessage(event: MessageEvent, via: String) {
         val key = "${event.sourceNodeId}:${event.requestId}"
         synchronized(seen) {
@@ -160,9 +160,9 @@ class DataLayerLink(
         when (event.path) {
             Protocol.PATH_PING -> {
                 val ping: Ping = event.data.fromWire()
-                AppLog.i(TAG, "Ping ${ping.id} recibido de ${ping.origin} vía $via")
+                AppLog.i(TAG, "Ping ${ping.id} received from ${ping.origin} via $via")
                 if (!isNearby(event.sourceNodeId)) {
-                    AppLog.i(TAG, "No se responde: el emisor no está conectado directamente")
+                    AppLog.i(TAG, "Not replying: the sender isn't directly connected")
                     return
                 }
                 val pong = Pong(ping.id, ping.sentAtMs, System.currentTimeMillis(), origin)
@@ -172,22 +172,22 @@ class DataLayerLink(
             Protocol.PATH_PONG -> {
                 val pong: Pong = event.data.fromWire()
                 val rtt = System.currentTimeMillis() - pong.pingSentAtMs
-                AppLog.i(TAG, "Pong ${pong.id} de ${pong.origin}: ida y vuelta $rtt ms")
+                AppLog.i(TAG, "Pong ${pong.id} from ${pong.origin}: round trip $rtt ms")
             }
 
             else -> {
-                // Un mensaje cifrado de quien no está emparejado con nosotros: se descarta y se le
-                // avisa, para que el otro lado sepa que hay que volver a emparejar.
+                // A sealed message from someone not paired with us: drop it and tell them, so the
+                // other side knows it has to pair again.
                 if (event.path !in PLAIN_PATHS) {
                     val paired = keys.peer.value
                     if (paired == null || paired.nodeId != event.sourceNodeId) {
-                        AppLog.i(TAG, "Mensaje ${event.path} de un nodo sin enlace: se descarta")
+                        AppLog.i(TAG, "Message ${event.path} from a node without a link: dropped")
                         reportUnknown(event.sourceNodeId)
                         return
                     }
                 }
                 val handler = handlers[event.path]
-                if (handler == null) AppLog.i(TAG, "Mensaje no atendido: ${event.path}") else handler(event)
+                if (handler == null) AppLog.i(TAG, "Unhandled message: ${event.path}") else handler(event)
             }
         }
     }
@@ -195,8 +195,8 @@ class DataLayerLink(
     private val lastUnknownReport = ConcurrentHashMap<String, Long>()
 
     /**
-     * Avisa a [nodeId] de que no tenemos enlace con él. Solo a nodos cercanos y como mucho una
-     * vez por minuto. El aviso no lleva nada secreto y no borra claves: el otro lado solo lo muestra.
+     * Tells [nodeId] that we have no link with it. Only to nearby nodes and at most once a minute.
+     * The notice carries nothing secret and deletes no keys: the other side only shows it.
      */
     suspend fun reportUnknown(nodeId: String) {
         val now = System.currentTimeMillis()
@@ -204,13 +204,13 @@ class DataLayerLink(
         if (now - last < 60_000) return
         lastUnknownReport[nodeId] = now
         runCatching { sendPlain(nodeId, Protocol.PATH_PAIR_UNKNOWN, ByteArray(0)) }
-            .onFailure { AppLog.e(TAG, "No se pudo avisar de que no hay enlace", it) }
+            .onFailure { AppLog.e(TAG, "Couldn't send the no-link notice", it) }
     }
 
     private companion object {
         const val TAG = "link"
 
-        /** Rutas que viajan en claro (todo lo demás exige enlace). */
+        /** Paths that travel in plain text (everything else requires a link). */
         val PLAIN_PATHS = setOf(
             Protocol.PATH_PAIR_INIT, Protocol.PATH_PAIR_REPLY, Protocol.PATH_PAIR_REVEAL,
             Protocol.PATH_PAIR_CONFIRM, Protocol.PATH_PAIR_UNKNOWN,

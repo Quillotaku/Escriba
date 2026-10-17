@@ -50,6 +50,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.annotation.StringRes
+import dev.escriba.mobile.R
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.escriba.datalayer.AppLog
@@ -70,7 +73,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Si ya se hizo el tour de inicio. Se puede repetir desde Ajustes. */
+/** Whether the welcome tour was done. It can be repeated from Settings. */
 class Onboarding(context: Context) {
     private val prefs = context.getSharedPreferences("tour", Context.MODE_PRIVATE)
     private val _done = MutableStateFlow(prefs.getBoolean(KEY, false))
@@ -85,20 +88,20 @@ class Onboarding(context: Context) {
     }
 
     private companion object {
-        const val KEY = "hecho"
+        const val KEY = "done"
     }
 }
 
-private enum class Step(val title: String) {
-    WELCOME("Escriba"),
-    VAULT("Tu bóveda de Obsidian"),
-    MODELS("Los modelos"),
-    WATCH("El reloj"),
-    SYSTEM("Notificaciones y batería"),
-    READY("Todo listo"),
+private enum class Step(@StringRes val title: Int) {
+    WELCOME(R.string.app_name),
+    VAULT(R.string.tour_vault),
+    MODELS(R.string.tour_models),
+    WATCH(R.string.tour_watch),
+    SYSTEM(R.string.tour_system),
+    READY(R.string.tour_ready),
 }
 
-/** Tour de inicio: lleva paso a paso por lo que Escriba necesita para funcionar. */
+/** Welcome tour: goes step by step through what Escriba needs to work. */
 @Composable
 fun OnboardingScreen(app: EscribaApp, actions: SystemActions) {
     var index by rememberSaveable { mutableIntStateOf(0) }
@@ -106,15 +109,15 @@ fun OnboardingScreen(app: EscribaApp, actions: SystemActions) {
     val c = Escriba.colors
 
     Column(Modifier.fillMaxSize().background(c.paper).safeDrawingPadding().padding(horizontal = Space.s4)) {
-        // Progreso: un punto por paso; el actual se alarga.
+        // Progress: one dot per step; the current one stretches.
         Row(Modifier.fillMaxWidth().padding(top = Space.s4), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
             Step.entries.forEachIndexed { i, _ ->
-                val width by animateDpAsState(if (i == index) 24.dp else 8.dp, tween(250), label = "progreso")
+                val width by animateDpAsState(if (i == index) 24.dp else 8.dp, tween(250), label = "progress")
                 Box(Modifier.size(width, 8.dp).clip(CircleShape).background(if (i <= index) c.lapis else c.rule))
             }
             Spacer(Modifier.weight(1f))
-            // En el último paso no hay nada que saltar, pero se guarda el hueco para que nada se mueva.
-            TextButton(onClick = { app.onboarding.finish() }, enabled = step != Step.READY, modifier = Modifier.alpha(if (step == Step.READY) 0f else 1f)) { Text("Saltar") }
+            // On the last step there's nothing to skip, but the space is kept so nothing moves.
+            TextButton(onClick = { app.onboarding.finish() }, enabled = step != Step.READY, modifier = Modifier.alpha(if (step == Step.READY) 0f else 1f)) { Text(stringResource(R.string.skip)) }
         }
 
         AnimatedContent(
@@ -129,7 +132,7 @@ fun OnboardingScreen(app: EscribaApp, actions: SystemActions) {
         ) { i ->
             val s = Step.entries[i]
             Column(Modifier.fillMaxSize().padding(top = Space.s5), verticalArrangement = Arrangement.spacedBy(Space.s3)) {
-                Text(s.title, style = MaterialTheme.typography.displaySmall, color = c.ink)
+                Text(stringResource(s.title), style = MaterialTheme.typography.displaySmall, color = c.ink)
                 Box(Modifier.weight(1f)) {
                     when (s) {
                         Step.WELCOME -> WelcomeStep()
@@ -144,15 +147,17 @@ fun OnboardingScreen(app: EscribaApp, actions: SystemActions) {
         }
 
         Row(Modifier.fillMaxWidth().padding(vertical = Space.s4), horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
-            if (index > 0) OutlinedButton(onClick = { index-- }) { Text("Atrás") }
+            if (index > 0) OutlinedButton(onClick = { index-- }) { Text(stringResource(R.string.back)) }
             Spacer(Modifier.weight(1f))
             Button(onClick = { if (step == Step.READY) app.onboarding.finish() else index++ }) {
                 Text(
-                    when (step) {
-                        Step.WELCOME -> "Empezar"
-                        Step.READY -> "Empezar a usar Escriba"
-                        else -> "Siguiente"
-                    },
+                    stringResource(
+                        when (step) {
+                            Step.WELCOME -> R.string.tour_start
+                            Step.READY -> R.string.tour_finish
+                            else -> R.string.next
+                        },
+                    ),
                 )
             }
         }
@@ -172,12 +177,12 @@ private fun Hint(text: String) = Text(text, style = MaterialTheme.typography.bod
 
 @Composable
 private fun WelcomeStep() = StepBody {
-    Lead("Graba en el reloj, transcribe y resume en el móvil y deja cada conversación como una nota en tu bóveda de Obsidian.")
+    Lead(stringResource(R.string.tour_welcome))
     listOf(
-        "Todo ocurre en este móvil: sin Internet y sin cuentas. El audio viaja del reloj cifrado.",
-        "Cada perfil (trabajo, un cliente, ideas…) decide dónde van las notas, qué resumen se hace y si se guarda el audio.",
-        "En unos minutos lo dejas listo: la bóveda, los modelos, el reloj y dos permisos.",
-    ).forEach { EsCard { Text(it, style = MaterialTheme.typography.bodyLarge, color = Escriba.colors.ink) } }
+        R.string.tour_welcome_private,
+        R.string.tour_welcome_profiles,
+        R.string.tour_welcome_minutes,
+    ).forEach { EsCard { Text(stringResource(it), style = MaterialTheme.typography.bodyLarge, color = Escriba.colors.ink) } }
 }
 
 @Composable
@@ -188,7 +193,7 @@ private fun VaultStep(app: EscribaApp) = StepBody {
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
         if (uri != null) {
             app.vault.choose(uri)
-            // Lo que falte (carpetas, perfiles de ejemplo, plantillas) se crea solo: no se sobrescribe nada.
+            // Whatever is missing (folders, sample profiles, templates) is created: nothing is overwritten.
             scope.launch {
                 created = withContext(Dispatchers.IO) { runCatching { VaultBootstrap.apply(app.vault) }.getOrDefault(emptyList()) }
                 app.profiles.reload()
@@ -196,19 +201,19 @@ private fun VaultStep(app: EscribaApp) = StepBody {
             }
         }
     }
-    Lead("Escriba escribe las notas en una carpeta de tu bóveda (p. ej. Documents/Obsidian/Escriba) y solo puede tocar lo que haya dentro.")
+    Lead(stringResource(R.string.tour_vault_lead))
     EsCard {
         if (tree == null) {
-            StatusChip("Sin elegir", Tone.WAIT)
-            Button(onClick = { picker.launch(null) }) { Text("Elegir carpeta de la bóveda") }
+            StatusChip(stringResource(R.string.not_chosen), Tone.WAIT)
+            Button(onClick = { picker.launch(null) }) { Text(stringResource(R.string.tour_choose_vault)) }
         } else {
-            StatusChip("Elegida", Tone.DONE)
+            StatusChip(stringResource(R.string.chosen), Tone.DONE)
             Text(app.vault.displayPath() ?: "", style = MaterialTheme.typography.titleSmall, color = Escriba.colors.ink)
-            created?.takeIf { it.isNotEmpty() }?.let { Hint("Creado: " + it.joinToString()) }
-            TextButton(onClick = { picker.launch(null) }) { Text("Cambiar") }
+            created?.takeIf { it.isNotEmpty() }?.let { Hint(stringResource(R.string.created_list, it.joinToString())) }
+            TextButton(onClick = { picker.launch(null) }) { Text(stringResource(R.string.change)) }
         }
     }
-    Hint("Los perfiles quedan en _config/escriba/perfiles: puedes editarlos aquí o en Obsidian.")
+    Hint(stringResource(R.string.profiles_hint, VaultBootstrap.PROFILES_DIR))
 }
 
 @Composable
@@ -216,29 +221,29 @@ private fun ModelsStep(app: EscribaApp) = StepBody {
     val folder by app.models.folder.collectAsStateWithLifecycle()
     val models by app.models.models.collectAsStateWithLifecycle()
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
-        if (uri != null) runCatching { app.models.chooseFolder(uri) }.onFailure { AppLog.e("modelos", "No se pudo usar esa carpeta", it) }
+        if (uri != null) runCatching { app.models.chooseFolder(uri) }.onFailure { AppLog.e("models", "Couldn't use that folder", it) }
     }
-    Lead("Los modelos no van dentro de la app: déjalos en una carpeta (p. ej. Descargas/models) y elígela. Escriba los lee desde ahí.")
+    Lead(stringResource(R.string.models_folder_hint))
     EsCard {
         if (folder == null) {
-            StatusChip("Sin elegir", Tone.WAIT)
-            Button(onClick = { picker.launch(null) }) { Text("Elegir carpeta de modelos") }
+            StatusChip(stringResource(R.string.not_chosen), Tone.WAIT)
+            Button(onClick = { picker.launch(null) }) { Text(stringResource(R.string.tour_choose_models)) }
         } else {
             Text(app.models.folderName() ?: "", style = MaterialTheme.typography.titleSmall, color = Escriba.colors.ink)
-            TextButton(onClick = { picker.launch(null) }) { Text("Cambiar") }
+            TextButton(onClick = { picker.launch(null) }) { Text(stringResource(R.string.change)) }
         }
     }
     val has = { kind: String -> models.any { it.kind == kind } }
-    ModelNeed("Transcripción", "ggml-large-v3-turbo-q8_0.bin (whisper.cpp)", folder != null, has("whisper"))
-    ModelNeed("Resumen", "gemma-3-4b-it-Q4_K_M.gguf", folder != null, has("llm"))
+    ModelNeed(stringResource(R.string.dash_transcription), "ggml-large-v3-turbo-q8_0.bin (whisper.cpp)", folder != null, has("whisper"))
+    ModelNeed(stringResource(R.string.summary), "gemma-3-4b-it-Q4_K_M.gguf", folder != null, has("llm"))
     ModelNeed(
-        "Quién habla (opcional)",
-        "${Diarizer.SEGMENTATION_MODEL} y ${Diarizer.EMBEDDING_MODEL}",
+        stringResource(R.string.tour_need_speakers),
+        "${Diarizer.SEGMENTATION_MODEL}, ${Diarizer.EMBEDDING_MODEL}",
         folder != null,
         models.any { it.name == Diarizer.SEGMENTATION_MODEL } && models.any { it.name == Diarizer.EMBEDDING_MODEL },
         optional = true,
     )
-    ModelNeed("Parakeet (opcional, más rápido)", "parakeet-tdt-0.6b-v3: encoder, decoder, joiner y tokens", folder != null, models.count { it.kind == "parakeet" } >= 4, optional = true)
+    ModelNeed(stringResource(R.string.tour_need_parakeet), "parakeet-tdt-0.6b-v3: encoder, decoder, joiner, tokens", folder != null, models.count { it.kind == "parakeet" } >= 4, optional = true)
 }
 
 @Composable
@@ -248,9 +253,9 @@ private fun ModelNeed(title: String, file: String, folderChosen: Boolean, found:
             Text(title, style = MaterialTheme.typography.titleSmall, color = Escriba.colors.ink, modifier = Modifier.weight(1f))
             when {
                 !folderChosen -> Unit
-                found -> StatusChip("Encontrado", Tone.DONE)
-                optional -> StatusChip("No está", Tone.WAIT)
-                else -> StatusChip("Falta", Tone.ERROR)
+                found -> StatusChip(stringResource(R.string.found), Tone.DONE)
+                optional -> StatusChip(stringResource(R.string.not_there), Tone.WAIT)
+                else -> StatusChip(stringResource(R.string.missing), Tone.ERROR)
             }
         }
         Text(file, style = Escriba.type.time, color = Escriba.colors.inkMuted)
@@ -260,8 +265,8 @@ private fun ModelNeed(title: String, file: String, folderChosen: Boolean, found:
 @Composable
 private fun WatchStep(app: EscribaApp) {
     Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
-        Lead("Instala Escriba en el reloj, ábrelo y pulsa «Emparejar» aquí. Los dos mostrarán el mismo código: compruébalo y confirma.")
-        // La misma pantalla de Ajustes → Reloj, con su propio desplazamiento.
+        Lead(stringResource(R.string.tour_watch_lead))
+        // The same screen as Settings → Watch, with its own scrolling.
         Box(Modifier.weight(1f)) { WatchPage(app, PaddingValues(0.dp)) }
     }
 }
@@ -273,7 +278,7 @@ private fun SystemStep(actions: SystemActions) = StepBody {
     var notifications by remember { mutableStateOf(notificationsGranted()) }
     var exempt by remember { mutableStateOf(actions.isBatteryExempt()) }
     val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { notifications = it }
-    // Al volver de los ajustes del sistema, se comprueba otra vez.
+    // When coming back from the system settings, it's checked again.
     LaunchedEffect(Unit) {
         while (true) {
             exempt = actions.isBatteryExempt()
@@ -283,24 +288,24 @@ private fun SystemStep(actions: SystemActions) = StepBody {
     }
     EsCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Notificaciones", style = MaterialTheme.typography.titleSmall, color = Escriba.colors.ink, modifier = Modifier.weight(1f))
-            if (notifications) StatusChip("Activadas", Tone.DONE)
+            Text(stringResource(R.string.notifications), style = MaterialTheme.typography.titleSmall, color = Escriba.colors.ink, modifier = Modifier.weight(1f))
+            if (notifications) StatusChip(stringResource(R.string.enabled), Tone.DONE)
         }
-        Hint("Para ver qué se está transcribiendo o resumiendo.")
-        if (!notifications) Button(onClick = { ask.launch(Manifest.permission.POST_NOTIFICATIONS) }) { Text("Permitir notificaciones") }
+        Hint(stringResource(R.string.notifications_hint))
+        if (!notifications) Button(onClick = { ask.launch(Manifest.permission.POST_NOTIFICATIONS) }) { Text(stringResource(R.string.allow_notifications)) }
     }
     EsCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Sin optimización de batería", style = MaterialTheme.typography.titleSmall, color = Escriba.colors.ink, modifier = Modifier.weight(1f))
-            if (exempt) StatusChip("Hecho", Tone.DONE)
+            Text(stringResource(R.string.no_battery_optimization), style = MaterialTheme.typography.titleSmall, color = Escriba.colors.ink, modifier = Modifier.weight(1f))
+            if (exempt) StatusChip(stringResource(R.string.done), Tone.DONE)
         }
-        Hint("Si el sistema cierra Escriba, el audio se queda esperando en el reloj.")
-        if (!exempt) Button(onClick = actions.requestBatteryExemption) { Text("Excluir a Escriba") }
+        Hint(stringResource(R.string.battery_hint))
+        if (!exempt) Button(onClick = actions.requestBatteryExemption) { Text(stringResource(R.string.battery_exempt_action)) }
     }
     EsCard {
-        Text("En MagicOS, además", style = MaterialTheme.typography.titleSmall, color = Escriba.colors.ink)
-        Hint("Ajustes → Batería → Inicio de aplicaciones → Escriba: desactiva «Gestionar automáticamente» y activa las tres opciones.")
-        OutlinedButton(onClick = actions.openAppSettings) { Text("Abrir los ajustes de Escriba") }
+        Text(stringResource(R.string.tour_magicos), style = MaterialTheme.typography.titleSmall, color = Escriba.colors.ink)
+        Hint(stringResource(R.string.tour_magicos_hint))
+        OutlinedButton(onClick = actions.openAppSettings) { Text(stringResource(R.string.battery_open_settings)) }
     }
 }
 
@@ -309,20 +314,20 @@ private fun ReadyStep(app: EscribaApp) = StepBody {
     val tree by app.vault.tree.collectAsStateWithLifecycle()
     val folder by app.models.folder.collectAsStateWithLifecycle()
     val peer by app.link.keys.peer.collectAsStateWithLifecycle()
-    Lead("Ya puedes grabar desde el reloj: el botón de la app, el Tile o la complicación. Las notas aparecerán en tu bóveda.")
+    Lead(stringResource(R.string.tour_ready_lead))
     listOf(
-        "Bóveda" to (tree != null),
-        "Carpeta de modelos" to (folder != null),
-        "Reloj emparejado" to (peer != null),
+        R.string.vault to (tree != null),
+        R.string.models_folder to (folder != null),
+        R.string.watch_paired to (peer != null),
     ).forEach { (label, ok) ->
         EsCard {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(label, style = MaterialTheme.typography.titleSmall, color = Escriba.colors.ink, modifier = Modifier.weight(1f))
-                if (ok) StatusChip("Listo", Tone.DONE) else StatusChip("Pendiente", Tone.WAIT)
+                Text(stringResource(label), style = MaterialTheme.typography.titleSmall, color = Escriba.colors.ink, modifier = Modifier.weight(1f))
+                if (ok) StatusChip(stringResource(R.string.ready), Tone.DONE) else StatusChip(stringResource(R.string.pending), Tone.WAIT)
             }
         }
     }
-    Hint("Lo pendiente se puede hacer luego en Ajustes, y este tour se repite desde Ajustes → Tour de inicio.")
+    Hint(stringResource(R.string.tour_ready_hint))
     Spacer(Modifier.height(Space.s2))
     Spacer(Modifier.width(0.dp))
 }

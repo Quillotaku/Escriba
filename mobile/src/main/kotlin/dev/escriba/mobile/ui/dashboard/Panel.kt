@@ -1,5 +1,7 @@
 package dev.escriba.mobile.ui.dashboard
 
+import androidx.annotation.StringRes
+import dev.escriba.mobile.R
 import dev.escriba.mobile.data.InsightsEntity
 import dev.escriba.mobile.data.UsageEntity
 import dev.escriba.mobile.ui.today.ConversationItem
@@ -10,17 +12,17 @@ import dev.escriba.shared.llm.Insights
 import java.time.Instant
 import java.time.ZoneId
 
-/** Periodo del panel. */
-enum class Period(val label: String) { WEEK("Semana"), MONTH("Mes"), ALL("Todo") }
+/** Dashboard period. */
+enum class Period(@StringRes val label: Int) { WEEK(R.string.period_week), MONTH(R.string.period_month), ALL(R.string.period_all) }
 
-/** Desde cuándo cuenta cada periodo: lunes a medianoche, día 1 del mes o desde siempre. */
+/** Where each period starts: Monday at midnight, the 1st of the month or the very beginning. */
 fun periodStart(nowMs: Long, zone: ZoneId, period: Period): Long = when (period) {
     Period.WEEK -> weekStart(nowMs, zone)
     Period.MONTH -> Instant.ofEpochMilli(nowMs).atZone(zone).toLocalDate().withDayOfMonth(1).atStartOfDay(zone).toInstant().toEpochMilli()
     Period.ALL -> 0L
 }
 
-/** Uso de un modelo en el periodo. */
+/** A model's usage in the period. */
 data class ModelUsage(
     val model: String,
     val runs: Int,
@@ -44,11 +46,11 @@ data class Panel(
     val promptTokens: Long get() = summaries.sumOf { it.promptTokens }
     val generatedTokens: Long get() = summaries.sumOf { it.generatedTokens }
 
-    /** Tiempo de cálculo por segundo de audio (×0,26: una hora de voz en 16 min). */
+    /** Compute time per second of audio (×0.26: an hour of speech in 16 min). */
     val realTimeFactor: Double get() = if (audioMs > 0) transcribeMs.toDouble() / audioMs else 0.0
 }
 
-/** Todo lo del panel desde [fromMs]: tareas, tiempo por perfil y uso de los modelos. */
+/** Everything on the dashboard since [fromMs]: tasks, time per profile and model usage. */
 fun buildPanel(fromMs: Long, conversations: List<ConversationItem>, insights: List<InsightsEntity>, usage: List<UsageEntity>): Panel {
     val inPeriod = conversations.filter { it.startMs >= fromMs }
     val byProfile = inPeriod.groupBy { it.profileId }
@@ -77,9 +79,9 @@ fun buildPanel(fromMs: Long, conversations: List<ConversationItem>, insights: Li
     return Panel(tasks, byProfile, byProfile.sumOf { it.minutes }, perModel(UsageEntity.ASR), perModel(UsageEntity.LLM))
 }
 
-/** «ggml-large-v3-turbo-q8_0.bin» → «large-v3-turbo-q8_0»; «gemma-3-4b-it-Q4_K_M.gguf» → «gemma-3-4b-it-Q4_K_M». */
+/** "ggml-large-v3-turbo-q8_0.bin" → "large-v3-turbo-q8_0"; "gemma-3-4b-it-Q4_K_M.gguf" → "gemma-3-4b-it-Q4_K_M". */
 fun shortModelName(model: String): String =
     model.substringAfterLast('/').removePrefix("ggml-").removeSuffix(".bin").removeSuffix(".gguf")
 
-/** «12 345» con el separador de miles español (espacio fino no separable). */
-fun formatCount(n: Long): String = String.format(java.util.Locale.ROOT, "%,d", n).replace(',', ' ')
+/** "12,345", with the English thousands separator. */
+fun formatCount(n: Long): String = String.format(java.util.Locale.ROOT, "%,d", n)

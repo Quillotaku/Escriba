@@ -6,11 +6,11 @@ import java.io.Closeable
 import java.nio.ByteOrder
 
 /**
- * Codifica PCM 16 bits mono a paquetes Opus con el códec del sistema
- * (`c2.android.opus.encoder`, verificado en el reloj en la fase 1).
+ * Encodes 16-bit mono PCM into Opus packets with the system codec
+ * (`c2.android.opus.encoder`, verified on the watch).
  *
- * No empaqueta nada: entrega cada paquete a [onPacket]. Antes del primer paquete llama a
- * [onFormat] con el pre-skip (muestras a 48 kHz que el decodificador debe descartar).
+ * It doesn't containerize anything: it hands each packet to [onPacket]. Before the first packet
+ * it calls [onFormat] with the pre-skip (samples at 48 kHz the decoder must drop).
  */
 class OpusEncoder(
     private val sampleRate: Int,
@@ -59,7 +59,7 @@ class OpusEncoder(
         }
     }
 
-    /** Vacía el códec (entrega los últimos paquetes) y lo libera. */
+    /** Drains the codec (delivers the last packets) and releases it. */
     override fun close() {
         if (closed) return
         closed = true
@@ -106,10 +106,10 @@ class OpusEncoder(
     private companion object {
         const val TIMEOUT_US = 10_000L
         const val MAX_ATTEMPTS = 200
-        /** Retardo típico del codificador Opus (6,5 ms) si el códec no lo indica. */
+        /** Typical Opus encoder delay (6.5 ms) if the codec doesn't report it. */
         const val DEFAULT_PRE_SKIP = 312
 
-        /** csd-1 contiene el retardo del códec en nanosegundos (entero de 64 bits, little-endian). */
+        /** csd-1 holds the codec delay in nanoseconds (64-bit integer, little-endian). */
         fun preSkip(format: MediaFormat): Int {
             val csd = format.getByteBuffer("csd-1") ?: return DEFAULT_PRE_SKIP
             if (csd.remaining() < 8) return DEFAULT_PRE_SKIP

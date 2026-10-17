@@ -10,8 +10,8 @@ import dev.escriba.wear.ui.EscribaWearTheme
 import dev.escriba.wear.ui.ProfilesScreen
 
 /**
- * Lista completa de perfiles («Más…» en el Tile). Elegir uno empieza a grabar con él o, si ya
- * se está grabando, cambia de perfil (cierra la sesión y abre otra).
+ * Full list of profiles ("More" on the Tile). Picking one starts recording with it or, if already
+ * recording, switches profile (closes the session and opens another).
  */
 class ProfilePickerActivity : ComponentActivity() {
 
@@ -23,8 +23,8 @@ class ProfilePickerActivity : ComponentActivity() {
                 AppScaffold {
                     ProfilesScreen(app) { id, current, _ ->
                         if (!current) {
-                            runCatching { RecorderService.send(this@ProfilePickerActivity, RecorderService.switchIntent(this@ProfilePickerActivity, id, "lista")) }
-                                .onFailure { AppLog.e("ui", "No se pudo iniciar la grabación", it) }
+                            runCatching { RecorderService.send(this@ProfilePickerActivity, RecorderService.switchIntent(this@ProfilePickerActivity, id, "list")) }
+                                .onFailure { AppLog.e("ui", "Couldn't start the recording", it) }
                         }
                         finish()
                     }

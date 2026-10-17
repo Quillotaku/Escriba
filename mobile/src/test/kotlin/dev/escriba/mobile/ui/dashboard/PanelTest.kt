@@ -8,7 +8,7 @@ import org.junit.Test
 import java.time.LocalDateTime
 import java.time.ZoneId
 
-/** El panel: periodos, tiempo por perfil y uso de los modelos. */
+/** The dashboard: periods, time per profile and model usage. */
 class PanelTest {
 
     private val zone = ZoneId.of("Europe/Madrid")
@@ -26,19 +26,19 @@ class PanelTest {
             promptTokens = prompt, generatedTokens = generated, atMs = at)
 
     @Test
-    fun `semana mes y todo empiezan donde deben`() {
-        assertEquals(at(10, 12, 0), periodStart(now, zone, Period.WEEK)) // lunes 12
+    fun `week month and all start where they should`() {
+        assertEquals(at(10, 12, 0), periodStart(now, zone, Period.WEEK)) // Monday the 12th
         assertEquals(at(10, 1, 0), periodStart(now, zone, Period.MONTH))
         assertEquals(0L, periodStart(now, zone, Period.ALL))
     }
 
     @Test
-    fun `el uso se agrupa por modelo y solo cuenta el periodo`() {
+    fun `usage is grouped by model and only counts the period`() {
         val usage = listOf(
             usage(UsageEntity.ASR, "ggml-large-v3-turbo-q8_0.bin", at(10, 16), audioMin = 30, computeMin = 8),
             usage(UsageEntity.ASR, "ggml-large-v3-turbo-q8_0.bin", at(10, 17), audioMin = 10, computeMin = 2),
             usage(UsageEntity.ASR, "parakeet-tdt-0.6b-v3", at(10, 17), audioMin = 20, computeMin = 1),
-            usage(UsageEntity.ASR, "ggml-large-v3-turbo-q8_0.bin", at(9, 20), audioMin = 99), // otro mes
+            usage(UsageEntity.ASR, "ggml-large-v3-turbo-q8_0.bin", at(9, 20), audioMin = 99), // another month
             usage(UsageEntity.LLM, "gemma-3-4b-it-Q4_K_M.gguf", at(10, 17), prompt = 1500, generated = 170),
             usage(UsageEntity.LLM, "gemma-3-4b-it-Q4_K_M.gguf", at(10, 13), prompt = 600, generated = 140),
         )
@@ -56,23 +56,23 @@ class PanelTest {
     }
 
     @Test
-    fun `el tiempo por perfil suma lo del periodo`() {
+    fun `time per profile adds up the period`() {
         val convs = listOf(
-            conv("a", at(10, 15), 41, "trabajo"),
-            conv("b", at(10, 16), 3, "trabajo"),
-            conv("c", at(10, 14), 32, "casual"),
-            conv("d", at(10, 2), 60, "trabajo"), // fuera de la semana
+            conv("a", at(10, 15), 41, "work"),
+            conv("b", at(10, 16), 3, "work"),
+            conv("c", at(10, 14), 32, "personal"),
+            conv("d", at(10, 2), 60, "work"), // outside the week
         )
         val p = buildPanel(periodStart(now, zone, Period.WEEK), convs, emptyList(), emptyList())
-        assertEquals(mapOf("trabajo" to 44, "casual" to 32), p.byProfile.associate { it.profileId to it.minutes })
+        assertEquals(mapOf("work" to 44, "personal" to 32), p.byProfile.associate { it.profileId to it.minutes })
         assertEquals(76, p.totalMinutes)
     }
 
     @Test
-    fun `nombres de modelo cortos y cifras con separador de miles`() {
+    fun `short model names and figures with a thousands separator`() {
         assertEquals("large-v3-turbo-q8_0", shortModelName("ggml-large-v3-turbo-q8_0.bin"))
         assertEquals("gemma-3-4b-it-Q4_K_M", shortModelName("/models/gemma-3-4b-it-Q4_K_M.gguf"))
-        assertEquals("12 345", formatCount(12_345))
+        assertEquals("12,345", formatCount(12_345))
         assertEquals("170", formatCount(170))
     }
 }

@@ -11,8 +11,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 /**
- * Las migraciones de Room, sobre SQLite de verdad (Robolectric). Los esquemas de las versiones 1
- * a 4 se derivaron del 5 quitando lo que añadió cada migración (están en mobile/schemas).
+ * Room's migrations, on real SQLite (Robolectric). The schemas of versions 1 to 4 were derived
+ * from 5 by removing what each migration added (they're in mobile/schemas).
  */
 @RunWith(RobolectricTestRunner::class)
 class MigrationTest {
@@ -26,11 +26,11 @@ class MigrationTest {
     )
 
     @Test
-    fun `de la v1 a la actual sin perder sesiones ni fragmentos`() {
+    fun `from v1 to the current one without losing sessions or fragments`() {
         helper.createDatabase(DB, 1).use { db ->
             db.execSQL(
                 "INSERT INTO sessions (id, profileId, profileHash, startMs, lastSpeechEndMs, endMs, expectedFragments, " +
-                    "receivedFragments, speechMs, bytes, updatedAtMs) VALUES ('s1', 'trabajo', 'h', 1000, 5000, 6000, 1, 1, 4000, 2048, 6000)",
+                    "receivedFragments, speechMs, bytes, updatedAtMs) VALUES ('s1', 'work', 'h', 1000, 5000, 6000, 1, 1, 4000, 2048, 6000)",
             )
             db.execSQL(
                 "INSERT INTO fragments (sessionId, seq, startMs, endMs, segmentsJson, speechMs, sizeBytes, sha256, path, receivedAtMs) " +
@@ -41,9 +41,9 @@ class MigrationTest {
         helper.runMigrationsAndValidate(DB, 6, true, *EscribaDb.MIGRATIONS).use { db ->
             db.query("SELECT profileId, speechMs, processedAtMs FROM sessions WHERE id = 's1'").use { c ->
                 c.moveToFirst()
-                assertEquals("trabajo", c.getString(0))
+                assertEquals("work", c.getString(0))
                 assertEquals(4000, c.getLong(1))
-                assertEquals(true, c.isNull(2)) // columna nueva de la v2, vacía
+                assertEquals(true, c.isNull(2)) // new v2 column, empty
             }
             db.query("SELECT COUNT(*) FROM fragments").use { c ->
                 c.moveToFirst()
@@ -53,7 +53,7 @@ class MigrationTest {
     }
 
     @Test
-    fun `de la v4 a la v5 aparecen las tablas de voces`() {
+    fun `from v4 to v5 the voice tables appear`() {
         helper.createDatabase(DB, 4).use { db ->
             db.execSQL(
                 "INSERT INTO insights (sessionId, conversation, model, profileHash, json, createdAtMs) VALUES ('s1', 1, 'gemma', 'h', '{}', 1)",
@@ -73,7 +73,7 @@ class MigrationTest {
     }
 
     @Test
-    fun `de la v5 a la v6 las transcripciones pasan al registro de uso`() {
+    fun `from v5 to v6 transcripts move into the usage log`() {
         helper.createDatabase(DB, 5).use { db ->
             db.execSQL(
                 "INSERT INTO transcripts (sessionId, model, language, linesJson, audioMs, transcribeMs, createdAtMs) " +
@@ -94,10 +94,10 @@ class MigrationTest {
     }
 
     /**
-     * Ruta absoluta como nombre: Room comprueba que la ruta pedida acabe en «/nombre», y en Windows
-     * (donde corren estos tests) el separador es «\». Con la ruta entera, coincide tal cual.
+     * Absolute path as the name: Room checks that the requested path ends in "/name", and on Windows
+     * (where these tests run) the separator is "\". With the whole path, it matches as is.
      */
     private val DB: String = java.io.File(
-        InstrumentationRegistry.getInstrumentation().targetContext.cacheDir, "migracion-test.db",
+        InstrumentationRegistry.getInstrumentation().targetContext.cacheDir, "migration-test.db",
     ).absolutePath
 }

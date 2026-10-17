@@ -10,7 +10,7 @@ android {
     defaultConfig {
         minSdk = 35
         ndk {
-            // Solo el móvil (Honor Magic 8 Pro, arm64). El reloj no usa este módulo.
+            // Phone only (arm64). The watch doesn't use this module.
             abiFilters += "arm64-v8a"
         }
         externalNativeBuild {
@@ -21,7 +21,7 @@ android {
     }
 
     buildTypes {
-        // Sin optimizaciones la inferencia es inservible: también en debug se compila en Release.
+        // Without optimizations inference is unusable: it's compiled as Release in debug builds too.
         debug {
             externalNativeBuild { cmake { arguments += "-DCMAKE_BUILD_TYPE=Release" } }
         }

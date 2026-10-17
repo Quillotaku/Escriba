@@ -3,6 +3,7 @@ package dev.escriba.shared.vault
 import dev.escriba.shared.Segment
 import dev.escriba.shared.audio.OggOpusWriter
 import dev.escriba.shared.audio.OggReader
+import dev.escriba.shared.transcription.TranscriptLine
 import java.io.ByteArrayOutputStream
 import java.time.LocalTime
 import java.time.ZoneId
@@ -15,69 +16,69 @@ import kotlin.test.assertTrue
 class FrontmatterTest {
 
     @Test
-    fun `lee lo que escribe la interfaz de Propiedades de Obsidian`() {
+    fun `reads what Obsidian's Properties view writes`() {
         val note = """
             ---
-            nombre: Trabajo
-            hereda: base
-            favorito: true
-            redondeo: 5
-            horario: "07:30-23:30"
-            cliente: "[[Acme]]"
-            enlazar:
-              - personas
-              - clientes
-            vocabulario: [Kubernetes, "SAP S/4", 'O''Brien']
-            vacio:
-            # un comentario
-            idioma: es # otro comentario
+            name: Work
+            inherits: base
+            favorite: true
+            rounding: 5
+            schedule: "07:30-23:30"
+            client: "[[Acme]]"
+            link:
+              - people
+              - clients
+            vocabulary: [Kubernetes, "SAP S/4", 'O''Brien']
+            empty:
+            # a comment
+            language: en # another comment
             ---
             ## Prompt
-            Haz un acta.
+            Write the minutes.
         """.trimIndent()
         val (fm, errors) = Frontmatter.parse(note)
         assertTrue(errors.isEmpty(), errors.toString())
         val p = fm.properties
-        assertEquals(YamlValue.Text("Trabajo"), p["nombre"])
-        assertEquals(YamlValue.Bool(true), p["favorito"])
-        assertEquals(YamlValue.Number(5.0), p["redondeo"])
-        assertEquals(YamlValue.Text("07:30-23:30"), p["horario"])
-        assertEquals(YamlValue.Text("[[Acme]]"), p["cliente"])
-        assertEquals(YamlValue.Items(listOf("personas", "clientes")), p["enlazar"])
-        assertEquals(YamlValue.Items(listOf("Kubernetes", "SAP S/4", "O'Brien")), p["vocabulario"])
-        assertEquals(YamlValue.Empty, p["vacio"])
-        assertEquals(YamlValue.Text("es"), p["idioma"])
-        assertEquals("## Prompt\nHaz un acta.", fm.body)
+        assertEquals(YamlValue.Text("Work"), p["name"])
+        assertEquals(YamlValue.Bool(true), p["favorite"])
+        assertEquals(YamlValue.Number(5.0), p["rounding"])
+        assertEquals(YamlValue.Text("07:30-23:30"), p["schedule"])
+        assertEquals(YamlValue.Text("[[Acme]]"), p["client"])
+        assertEquals(YamlValue.Items(listOf("people", "clients")), p["link"])
+        assertEquals(YamlValue.Items(listOf("Kubernetes", "SAP S/4", "O'Brien")), p["vocabulary"])
+        assertEquals(YamlValue.Empty, p["empty"])
+        assertEquals(YamlValue.Text("en"), p["language"])
+        assertEquals("## Prompt\nWrite the minutes.", fm.body)
     }
 
     @Test
-    fun `los errores llevan su linea`() {
-        val (_, errors) = Frontmatter.parse("---\nnombre: A\n  anidado: x\nsin dos puntos\nmodo: {a: 1}\n---\n")
+    fun `errors carry their line`() {
+        val (_, errors) = Frontmatter.parse("---\nname: A\n  nested: x\nno colon\nmode: {a: 1}\n---\n")
         assertEquals(listOf(3, 4, 5), errors.map { it.line })
     }
 
     @Test
-    fun `sin frontmatter todo es cuerpo`() {
-        val (fm, errors) = Frontmatter.parse("# Nota\ntexto")
+    fun `without frontmatter everything is body`() {
+        val (fm, errors) = Frontmatter.parse("# Note\ntext")
         assertTrue(fm.properties.isEmpty() && errors.isEmpty())
-        assertEquals("# Nota\ntexto", fm.body)
+        assertEquals("# Note\ntext", fm.body)
     }
 
     @Test
-    fun `escribir y volver a leer conserva los valores`() {
+    fun `writing and reading back keeps the values`() {
         val props = linkedMapOf<String, YamlValue>(
-            "inicio" to YamlValue.Text("10:32"),
-            "cliente" to YamlValue.Text("[[Acme]]"),
-            "titulo" to YamlValue.Text("Reunión: cierre"),
-            "respuesta" to YamlValue.Text("no"),
-            "duracion_min" to YamlValue.Number(75.0),
-            "participantes" to YamlValue.Items(listOf("[[Ana López]]", "Hablante 2")),
-            "vacio" to YamlValue.Empty,
+            "start" to YamlValue.Text("10:32"),
+            "client" to YamlValue.Text("[[Acme]]"),
+            "title" to YamlValue.Text("Meeting: closing"),
+            "answer" to YamlValue.Text("no"),
+            "duration_min" to YamlValue.Number(75.0),
+            "participants" to YamlValue.Items(listOf("[[Ana López]]", "Speaker 2")),
+            "empty" to YamlValue.Empty,
         )
-        val (fm, errors) = Frontmatter.parse(Frontmatter.note(props, "cuerpo\n"))
+        val (fm, errors) = Frontmatter.parse(Frontmatter.note(props, "body\n"))
         assertTrue(errors.isEmpty(), errors.toString())
         assertEquals(props, fm.properties)
-        assertEquals("cuerpo\n", fm.body)
+        assertEquals("body\n", fm.body)
     }
 }
 
@@ -85,105 +86,116 @@ class ProfileLoaderTest {
 
     private val base = """
         ---
-        nombre: Trabajo
+        name: Work
         color: "#2E7D32"
-        icono: maletin
-        modo: continuo
-        diarizacion: true
-        tareas: true
-        enlazar: [personas, clientes]
-        guardar_audio: true
-        retencion_audio: 90d
-        separar_tras_silencio: 15m
-        carpeta: Trabajo/{{yyyy}}
+        icon: briefcase
+        mode: continuous
+        diarization: true
+        tasks: true
+        link: [people, clients]
+        save_audio: true
+        audio_retention: 90d
+        split_after_silence: 15m
+        folder: Work/{{yyyy}}
         ---
         ## Prompt
-        Redacta un acta.
+        Write the minutes.
     """.trimIndent()
 
     private val acme = """
         ---
-        nombre: Acme
-        hereda: trabajo
-        cliente: "[[Acme]]"
-        favorito: true
-        carpeta: Clientes/Acme/Reuniones
+        name: Acme
+        inherits: work
+        client: "[[Acme]]"
+        favorite: true
+        folder: Clients/Acme/Meetings
         ---
     """.trimIndent()
 
     @Test
-    fun `la herencia aplica los valores del padre y el prompt`() {
-        val set = ProfileLoader.load(null, mapOf("trabajo" to base, "acme" to acme))
+    fun `inheritance applies the parent's values and prompt`() {
+        val set = ProfileLoader.load(null, mapOf("work" to base, "acme" to acme))
         assertTrue(set.errors.isEmpty(), set.errors.toString())
         val p = set.profiles.getValue("acme")
         assertEquals("Acme", p.name)
         assertEquals("[[Acme]]", p.client)
-        assertEquals("continuo", p.mode)
-        assertEquals("maletin", p.icon)
-        assertEquals(listOf("personas", "clientes"), p.link)
+        assertEquals(ProfileLoader.MODE_CONTINUOUS, p.mode)
+        assertTrue(p.continuous)
+        assertEquals("briefcase", p.icon)
+        assertEquals(listOf("people", "clients"), p.link)
         assertEquals(90, p.audioRetentionDays)
         assertEquals(15, p.splitAfterSilenceMin)
-        assertEquals("Clientes/Acme/Reuniones", p.folder)
-        assertEquals("Redacta un acta.", p.prompt)
+        assertEquals("Clients/Acme/Meetings", p.folder)
+        assertEquals("Write the minutes.", p.prompt)
         assertTrue(p.favorite)
-        // El padre no hereda el nombre del hijo, ni el hijo el del padre.
-        assertEquals("Trabajo", set.profiles.getValue("trabajo").name)
+        // The parent doesn't inherit the child's name, nor the child the parent's.
+        assertEquals("Work", set.profiles.getValue("work").name)
     }
 
     @Test
-    fun `un perfil invalido no rompe los demas`() {
-        val bad = "---\nnombre: Malo\nmodo: siempre\ncolor: verde\n---\n"
-        val set = ProfileLoader.load(null, mapOf("trabajo" to base, "malo" to bad))
-        assertTrue("trabajo" in set.profiles)
-        assertTrue("malo" !in set.profiles)
-        val errors = set.errors.getValue("perfiles/malo.md")
-        assertTrue(errors.any { it.startsWith("modo:") } && errors.any { it.startsWith("color:") }, errors.toString())
+    fun `an invalid profile doesn't break the others`() {
+        val bad = "---\nname: Bad\nmode: always\ncolor: green\n---\n"
+        val set = ProfileLoader.load(null, mapOf("work" to base, "bad" to bad))
+        assertTrue("work" in set.profiles)
+        assertTrue("bad" !in set.profiles)
+        val errors = set.errors.getValue("profiles/bad.md")
+        assertTrue(errors.any { it.startsWith("mode:") } && errors.any { it.startsWith("color:") }, errors.toString())
     }
 
     @Test
-    fun `herencia circular o rota`() {
-        val a = "---\nhereda: b\n---\n"
-        val b = "---\nhereda: a\n---\n"
-        val c = "---\nhereda: noexiste\n---\n"
+    fun `circular or broken inheritance`() {
+        val a = "---\ninherits: b\n---\n"
+        val b = "---\ninherits: a\n---\n"
+        val c = "---\ninherits: missing\n---\n"
         val set = ProfileLoader.load(null, mapOf("a" to a, "b" to b, "c" to c))
         assertTrue(set.profiles.isEmpty())
-        assertTrue(set.errors.getValue("perfiles/a.md").any { "circular" in it })
-        assertTrue(set.errors.getValue("perfiles/c.md").any { "no existe" in it })
+        assertTrue(set.errors.getValue("profiles/a.md").any { "Circular" in it })
+        assertTrue(set.errors.getValue("profiles/c.md").any { "doesn't exist" in it })
     }
 
     @Test
-    fun `propiedades desconocidas avisan pero no invalidan`() {
-        val set = ProfileLoader.load(null, mapOf("x" to "---\nnombre: X\ncolour: red\n---\n"))
+    fun `unknown properties warn but don't invalidate`() {
+        val set = ProfileLoader.load(null, mapOf("x" to "---\nname: X\ncolour: red\n---\n"))
         assertTrue("x" in set.profiles)
-        assertTrue(set.errors.getValue("perfiles/x.md").single().contains("colour"))
+        assertTrue(set.errors.getValue("profiles/x.md").single().contains("colour"))
     }
 
     @Test
-    fun `las opciones cerradas no distinguen mayusculas`() {
-        val set = ProfileLoader.load("---\nnota_diaria_formato: yyyy-mm-dd\n---\n", mapOf("trabajo" to base))
+    fun `closed options are case-insensitive`() {
+        val set = ProfileLoader.load("---\ndaily_note_format: yyyy-mm-dd\n---\n", mapOf("work" to base))
         assertEquals("YYYY-MM-DD", set.config.dailyFormat)
-        assertTrue(set.errors["escriba.md"].orEmpty().none { "nota_diaria_formato" in it }, "sin error de formato: ${set.errors}")
+        assertTrue(set.errors["escriba.md"].orEmpty().none { "daily_note_format" in it }, "no format error: ${set.errors}")
     }
 
     @Test
-    fun `configuracion global y lista para el reloj`() {
-        val config = "---\nhorario: \"08:00-22:00\"\nperfil_por_defecto: acme\nretencion_audio_movil: 3d\n---\n"
-        val set = ProfileLoader.load(config, mapOf("trabajo" to base, "acme" to acme))
+    fun `global settings and the list for the watch`() {
+        val config = "---\nschedule: \"08:00-22:00\"\ndefault_profile: acme\nphone_audio_retention: 3d\n---\n"
+        val set = ProfileLoader.load(config, mapOf("work" to base, "acme" to acme))
         assertEquals(LocalTime.of(8, 0), set.config.schedule.start)
         assertEquals(3, set.config.phoneAudioRetentionDays)
         val forWatch = set.forWatch()
         assertEquals("acme", forWatch.defaultId)
         assertEquals("08:00-22:00", forWatch.schedule)
-        assertEquals("acme", forWatch.profiles.first().id) // favoritos primero
-        // La huella cambia si cambia el perfil.
-        val changed = ProfileLoader.load(config, mapOf("trabajo" to base.replace("15m", "20m"), "acme" to acme))
+        assertEquals("acme", forWatch.profiles.first().id) // favorites first
+        // The fingerprint changes when the profile changes.
+        val changed = ProfileLoader.load(config, mapOf("work" to base.replace("15m", "20m"), "acme" to acme))
         assertTrue(set.profiles.getValue("acme").hash != changed.profiles.getValue("acme").hash)
     }
 
     @Test
-    fun `duraciones`() {
+    fun `retention that never expires`() {
+        val set = ProfileLoader.load(null, mapOf(
+            "a" to "---\naudio_retention: forever\n---\n",
+            "b" to "---\naudio_retention: 0d\n---\n",
+            "c" to "---\naudio_retention: never\n---\n",
+        ))
+        assertTrue(set.profiles.values.all { it.audioRetentionDays == null }, set.toString())
+    }
+
+    @Test
+    fun durations() {
         assertEquals(10, Durations.minutes("10m"))
-        assertEquals(90, Durations.minutes("1h30") ?: 90) // formato no admitido: se queda el valor por defecto
+        assertEquals(90, Durations.minutes("1h30") ?: 90) // unsupported format: the default stays
         assertEquals(2, Durations.minutes("90s"))
         assertEquals(30, Durations.days("30d"))
         assertNull(Durations.days("30"))
@@ -198,11 +210,11 @@ class NotesTest {
     private fun frag(seq: Int, startH: Int, startM: Int, durS: Long) =
         FragmentInfo(seq, ms(startH, startM), ms(startH, startM) + durS * 1000, listOf(Segment(0, ms(startH, startM), durS * 1000)))
 
-    private val profile = ProfileLoader.load(null, mapOf("trabajo" to "---\nnombre: Trabajo\ncliente: \"[[Acme]]\"\ncarpeta: Clientes/{{yyyy}}/{{MM}}\n---\n"))
-        .profiles.getValue("trabajo")
+    private val profile = ProfileLoader.load(null, mapOf("work" to "---\nname: Work\nclient: \"[[Acme]]\"\nfolder: Clients/{{yyyy}}/{{MM}}\n---\n"))
+        .profiles.getValue("work")
 
     @Test
-    fun `una sesion se parte por silencios largos entre fragmentos`() {
+    fun `a session splits on long silences between fragments`() {
         val fragments = listOf(frag(0, 10, 0, 60), frag(1, 10, 2, 60), frag(2, 10, 30, 60), frag(3, 10, 31, 30))
         val conversations = Conversations.split(fragments, splitAfterMin = 10)
         assertEquals(listOf(listOf(0, 1), listOf(2, 3)), conversations.map { c -> c.fragments.map { it.seq } })
@@ -211,13 +223,13 @@ class NotesTest {
     }
 
     @Test
-    fun `redondeo al minuto mas cercano o al multiplo del perfil`() {
-        // Por defecto, al minuto más cercano.
+    fun `rounding to the nearest minute or to the profile's multiple`() {
+        // By default, to the nearest minute.
         assertEquals(1, Conversations.roundedMinutes(20_000))
         assertEquals(1, Conversations.roundedMinutes(89_000))
         assertEquals(2, Conversations.roundedMinutes(90_000))
         assertEquals(41, Conversations.roundedMinutes(41 * 60_000 + 10_000))
-        // Con «redondeo: 5m», al múltiplo de 5 más cercano, nunca menos de 5.
+        // With "rounding: 5m", to the nearest multiple of 5, never less than 5.
         assertEquals(5, Conversations.roundedMinutes(30_000, 5))
         assertEquals(5, Conversations.roundedMinutes(7 * 60_000, 5))
         assertEquals(10, Conversations.roundedMinutes(8 * 60_000, 5))
@@ -225,67 +237,67 @@ class NotesTest {
     }
 
     @Test
-    fun `la nota tiene frontmatter para Dataview y la transcripcion provisional`() {
+    fun `the note has Dataview frontmatter and a placeholder transcript`() {
         val c = Conversations.split(listOf(frag(0, 10, 32, 45), frag(1, 10, 34, 50)), 10).single()
-        val data = NoteData("sesion-1", c, profile, zone, audioLink = "Adjuntos/Escriba/2026-10-16 1032 Trabajo.ogg")
+        val data = NoteData("session-1", c, profile, zone, audioLink = "Attachments/Escriba/2026-10-16 1032 Work.ogg")
         val note = NoteRenderer.render(data, template = null)
         val (fm, errors) = Frontmatter.parse(note)
         assertTrue(errors.isEmpty(), errors.toString())
-        assertEquals("grabacion", fm.text("tipo"))
-        assertEquals("2026-10-16", fm.text("fecha"))
-        assertEquals("10:32", fm.text("inicio"))
-        assertEquals("10:34", fm.text("fin"))
-        assertEquals("3", fm.text("duracion_min")) // al minuto más cercano (el perfil no fija redondeo)
-        assertEquals("[[Acme]]", fm.text("cliente"))
-        assertEquals("[[Adjuntos/Escriba/2026-10-16 1032 Trabajo.ogg]]", fm.text("audio"))
-        assertTrue("![[Adjuntos/Escriba/2026-10-16 1032 Trabajo.ogg]]" in fm.body)
-        assertTrue("- **10:32** · 45 s de voz" in fm.body)
+        assertEquals("recording", fm.text("type"))
+        assertEquals("2026-10-16", fm.text("date"))
+        assertEquals("10:32", fm.text("start"))
+        assertEquals("10:34", fm.text("end"))
+        assertEquals("3", fm.text("duration_min")) // to the nearest minute (the profile sets no rounding)
+        assertEquals("[[Acme]]", fm.text("client"))
+        assertEquals("[[Attachments/Escriba/2026-10-16 1032 Work.ogg]]", fm.text("audio"))
+        assertTrue("![[Attachments/Escriba/2026-10-16 1032 Work.ogg]]" in fm.body)
+        assertTrue("- **10:32** · 45 s of speech" in fm.body)
         assertTrue(!fm.body.contains("{{"))
-        assertEquals("2026-10-16 1032 Trabajo", NoteRenderer.baseName(data))
-        assertEquals("Clientes/2026/10", NoteRenderer.folder(profile.folder, c.startMs, zone))
+        assertEquals("2026-10-16 1032 Work", NoteRenderer.baseName(data))
+        assertEquals("Clients/2026/10", NoteRenderer.folder(profile.folder, c.startMs, zone))
     }
 
     @Test
-    fun `plantilla propia con variables`() {
+    fun `custom template with variables`() {
         val c = Conversations.split(listOf(frag(0, 9, 5, 30)), 10).single()
-        val note = NoteRenderer.render(NoteData("s", c, profile, zone), "Reunión de {{perfil}} el {{fecha}} a las {{inicio}}\n{{desconocida}}")
-        assertTrue(note.endsWith("Reunión de Trabajo el 2026-10-16 a las 09:05\n{{desconocida}}"))
+        val note = NoteRenderer.render(NoteData("s", c, profile, zone), "{{profile}} meeting on {{date}} at {{start}}\n{{unknown}}")
+        assertTrue(note.endsWith("Work meeting on 2026-10-16 at 09:05\n{{unknown}}"))
     }
 
     @Test
-    fun `la transcripcion se agrupa en parrafos por pausas`() {
-        fun line(s: Int, e: Int, text: String) = dev.escriba.shared.transcription.TranscriptLine(ms(10, 0, s), ms(10, 0, e), text)
+    fun `the transcript is grouped into paragraphs by pauses`() {
+        fun line(s: Int, e: Int, text: String) = TranscriptLine(ms(10, 0, s), ms(10, 0, e), text)
         val text = NoteRenderer.transcript(
             listOf(
-                line(0, 3, "Luego había que darle"),
-                line(3, 5, "una lavada de cara"),
-                line(5, 6, "a la interfaz."),
-                line(15, 18, "Por ahora va que chuta."), // pausa de 9 s: párrafo nuevo
+                line(0, 3, "Then the interface"),
+                line(3, 5, "needed a good"),
+                line(5, 6, "facelift."),
+                line(15, 18, "For now it works fine."), // 9 s pause: new paragraph
             ),
             zone,
         )
-        assertEquals("**10:00:00** Luego había que darle una lavada de cara a la interfaz.\n\n**10:00:15** Por ahora va que chuta.", text)
+        assertEquals("**10:00:00** Then the interface needed a good facelift.\n\n**10:00:15** For now it works fine.", text)
     }
 
     @Test
-    fun `nombres de archivo seguros`() {
-        assertEquals("Acta cliente proyecto Q4", NoteRenderer.sanitize("Acta: cliente/proyecto? [Q4]"))
+    fun `safe file names`() {
+        assertEquals("Minutes client project Q4", NoteRenderer.sanitize("Minutes: client/project? [Q4]"))
     }
 
     @Test
-    fun `enlace en la nota diaria sin duplicar`() {
-        val created = DailyNote.addLink(null, "2026-10-16 1032 Trabajo", "2026-10-16")
-        assertEquals("# 2026-10-16\n\n## Grabaciones\n- [[2026-10-16 1032 Trabajo]]\n", created)
-        val second = DailyNote.addLink(created, "2026-10-16 1500 Casual", "2026-10-16")
-        assertEquals(DailyNote.addLink(second, "2026-10-16 1500 Casual", "2026-10-16"), second)
-        val userNote = "# Hoy\n\nNotas mías.\n\n## Grabaciones\n- [[a]]\n\n## Otra sección\ntexto\n"
+    fun `link in the daily note without duplicates`() {
+        val created = DailyNote.addLink(null, "2026-10-16 1032 Work", "2026-10-16")
+        assertEquals("# 2026-10-16\n\n## Recordings\n- [[2026-10-16 1032 Work]]\n", created)
+        val second = DailyNote.addLink(created, "2026-10-16 1500 Personal", "2026-10-16")
+        assertEquals(DailyNote.addLink(second, "2026-10-16 1500 Personal", "2026-10-16"), second)
+        val userNote = "# Today\n\nMy notes.\n\n## Recordings\n- [[a]]\n\n## Another section\ntext\n"
         val updated = DailyNote.addLink(userNote, "b", "x")
-        assertEquals("# Hoy\n\nNotas mías.\n\n## Grabaciones\n- [[a]]\n- [[b]]\n\n## Otra sección\ntexto\n", updated)
-        assertEquals("# Hoy\ntexto\n\n## Grabaciones\n- [[c]]\n", DailyNote.addLink("# Hoy\ntexto\n", "c", "x"))
+        assertEquals("# Today\n\nMy notes.\n\n## Recordings\n- [[a]]\n- [[b]]\n\n## Another section\ntext\n", updated)
+        assertEquals("# Today\ntext\n\n## Recordings\n- [[c]]\n", DailyNote.addLink("# Today\ntext\n", "c", "x"))
     }
 
     @Test
-    fun `unir fragmentos Ogg en uno`() {
+    fun `joining Ogg fragments into one`() {
         fun ogg(packets: Int): ByteArray {
             val out = ByteArrayOutputStream()
             OggOpusWriter(out, 1, 312, 16_000).use { w -> repeat(packets) { w.writePacket(byteArrayOf((27 shl 3).toByte(), it.toByte())) } }

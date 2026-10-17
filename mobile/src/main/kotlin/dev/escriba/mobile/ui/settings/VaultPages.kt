@@ -54,6 +54,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import dev.escriba.mobile.R
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.escriba.datalayer.AppLog
@@ -78,7 +81,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-// --- Bóveda y perfiles -------------------------------------------------------
+// --- Vault and profiles ------------------------------------------------------
 
 @Composable
 fun VaultPage(app: EscribaApp, padding: PaddingValues, editProfile: (String) -> Unit) {
@@ -93,30 +96,27 @@ fun VaultPage(app: EscribaApp, padding: PaddingValues, editProfile: (String) -> 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
         if (uri != null) {
             app.vault.choose(uri)
-            AppLog.i("boveda", "Bóveda elegida: ${app.vault.displayPath()}")
+            AppLog.i("vault", "Vault chosen: ${app.vault.displayPath()}")
         }
     }
 
     LaunchedEffect(tree) {
         if (tree != null) {
-            withContext(Dispatchers.IO) { runCatching { VaultBootstrap.repair(app.vault) } }.getOrNull()
-                ?.takeIf { it.isNotEmpty() }
-                ?.let { AppLog.i("boveda", "Reparado: ${it.joinToString()}") }
             missing = withContext(Dispatchers.IO) { VaultBootstrap.missing(app.vault) }
             app.profiles.reload()
         }
     }
 
     Page(padding) {
-        Overline("Bóveda de Obsidian")
+        Overline(stringResource(R.string.obsidian_vault))
         EsCard {
             if (tree == null) {
-                Text("Elige la carpeta de tu bóveda (p. ej. Documents/Obsidian/Escriba). Escriba solo podrá tocar lo que haya dentro.", style = MaterialTheme.typography.bodyLarge, color = c.ink)
-                Button(onClick = { picker.launch(null) }) { Text("Elegir carpeta") }
+                Text(stringResource(R.string.vault_choose_hint), style = MaterialTheme.typography.bodyLarge, color = c.ink)
+                Button(onClick = { picker.launch(null) }) { Text(stringResource(R.string.choose_folder)) }
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(app.vault.displayPath() ?: "", style = MaterialTheme.typography.titleSmall, color = c.ink, modifier = Modifier.weight(1f))
-                    TextButton(onClick = { picker.launch(null) }) { Text("Cambiar") }
+                    TextButton(onClick = { picker.launch(null) }) { Text(stringResource(R.string.change)) }
                 }
             }
         }
@@ -124,30 +124,30 @@ fun VaultPage(app: EscribaApp, padding: PaddingValues, editProfile: (String) -> 
         val toCreate = missing
         if (tree != null && !toCreate.isNullOrEmpty()) {
             EsCard {
-                StatusChip("Falta configuración", Tone.WAIT)
-                Text("Escriba necesita crear esto en tu bóveda. No se sobrescribe nada que ya exista:", style = MaterialTheme.typography.bodyLarge, color = c.ink)
+                StatusChip(stringResource(R.string.vault_missing_config), Tone.WAIT)
+                Text(stringResource(R.string.vault_create_hint), style = MaterialTheme.typography.bodyLarge, color = c.ink)
                 Text(toCreate.joinToString("\n") { "· $it" }, style = MaterialTheme.typography.bodyMedium, color = c.inkMuted)
                 Button(onClick = {
                     scope.launch {
                         val created = withContext(Dispatchers.IO) { runCatching { VaultBootstrap.apply(app.vault) } }
-                        created.onSuccess { AppLog.i("boveda", "Creado: ${it.joinToString()}") }
-                            .onFailure { AppLog.e("boveda", "No se pudo crear la configuración", it) }
+                        created.onSuccess { AppLog.i("vault", "Created: ${it.joinToString()}") }
+                            .onFailure { AppLog.e("vault", "Couldn't create the configuration", it) }
                         missing = withContext(Dispatchers.IO) { VaultBootstrap.missing(app.vault) }
                         app.profiles.reload()
                         app.profiles.syncToWatch(force = true)
                     }
-                }) { Text("Crear configuración") }
+                }) { Text(stringResource(R.string.vault_create)) }
             }
         }
 
         val current = set ?: return@Page
 
-        // Avisos al leer los archivos de configuración: Escriba usa el valor por defecto hasta que se corrijan.
+        // Warnings from reading the configuration files: Escriba uses the default value until they're fixed.
         if (current.errors.isNotEmpty()) {
             EsCard {
-                StatusChip("Revisa la configuración", Tone.WAIT)
+                StatusChip(stringResource(R.string.vault_check_config), Tone.WAIT)
                 Text(
-                    "Hay valores que Escriba no entiende en estos archivos de la bóveda. Mientras tanto usa el valor por defecto.",
+                    stringResource(R.string.vault_config_errors),
                     style = MaterialTheme.typography.bodyMedium, color = c.inkMuted,
                 )
                 current.errors.forEach { (file, errors) ->
@@ -159,7 +159,7 @@ fun VaultPage(app: EscribaApp, padding: PaddingValues, editProfile: (String) -> 
             }
         }
 
-        Overline("Perfiles", Modifier.padding(top = Space.s3))
+        Overline(stringResource(R.string.profiles), Modifier.padding(top = Space.s3))
         EsCard {
             current.profiles.values.forEachIndexed { i, p ->
                 if (i > 0) HorizontalDivider(color = c.rule)
@@ -172,7 +172,7 @@ fun VaultPage(app: EscribaApp, padding: PaddingValues, editProfile: (String) -> 
                 horizontalArrangement = Arrangement.spacedBy(Space.s2),
             ) {
                 Icon(Icons.Rounded.Add, null, tint = c.lapis)
-                Text("Nuevo perfil", style = MaterialTheme.typography.titleSmall, color = c.lapis)
+                Text(stringResource(R.string.new_profile), style = MaterialTheme.typography.titleSmall, color = c.lapis)
             }
         }
         if (creating) NewProfileDialog(app, current.profiles.values.toList(), close = { creating = false }) { id ->
@@ -180,14 +180,16 @@ fun VaultPage(app: EscribaApp, padding: PaddingValues, editProfile: (String) -> 
             editProfile(id)
         }
         Text(
-            "Los perfiles son archivos de _config/escriba/perfiles en tu bóveda: puedes editarlos aquí o en Obsidian.",
+            stringResource(R.string.profiles_hint, VaultBootstrap.PROFILES_DIR),
             style = MaterialTheme.typography.bodyMedium, color = c.inkMuted,
         )
         EsCard {
-            SettingRow(Icons.Rounded.Refresh, "Volver a leer la bóveda", "Si has cambiado perfiles en Obsidian", onClick = { scope.launch { app.profiles.reload() } }, trailing = {})
+            SettingRow(Icons.Rounded.Refresh, stringResource(R.string.vault_reload), stringResource(R.string.vault_reload_hint), onClick = { scope.launch { app.profiles.reload() } }, trailing = {})
             HorizontalDivider(color = c.rule)
-            SettingRow(EscribaIcons.Watch, "Enviar perfiles al reloj", message ?: "Se envían solos al cambiar; esto lo fuerza", onClick = {
-                scope.launch { message = if (app.profiles.syncToWatch(force = true)) "Enviados" else "El reloj no está conectado" }
+            val sent = stringResource(R.string.profiles_sent)
+            val notConnected = stringResource(R.string.watch_not_connected)
+            SettingRow(EscribaIcons.Watch, stringResource(R.string.profiles_send), message ?: stringResource(R.string.profiles_send_hint), onClick = {
+                scope.launch { message = if (app.profiles.syncToWatch(force = true)) sent else notConnected }
             }, trailing = {})
         }
     }
@@ -204,16 +206,16 @@ private fun ProfileRow(p: Profile, isDefault: Boolean, onClick: () -> Unit) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
                 ProfileDot(c.profileColor(p.color))
                 Text(p.name, style = MaterialTheme.typography.titleSmall, color = c.ink)
-                if (p.favorite) Icon(Icons.Rounded.Star, "Favorito", Modifier.size(16.dp), tint = c.ochre)
-                if (isDefault) Text("Por defecto", style = MaterialTheme.typography.labelMedium, color = c.inkMuted)
+                if (p.favorite) Icon(Icons.Rounded.Star, stringResource(R.string.favorite), Modifier.size(16.dp), tint = c.ochre)
+                if (isDefault) Text(stringResource(R.string.default_profile), style = MaterialTheme.typography.labelMedium, color = c.inkMuted)
             }
             Text(
                 listOfNotNull(
-                    if (p.mode == "continuo") "Continuo" else "Bajo demanda",
+                    stringResource(if (p.continuous) R.string.mode_continuous else R.string.mode_on_demand),
                     if (p.engine == "parakeet") "Parakeet" else null,
-                    "quién habla".takeIf { p.diarization },
-                    "tareas".takeIf { p.tasks },
-                    "guarda audio".takeIf { p.saveAudio },
+                    stringResource(R.string.tag_speakers).takeIf { p.diarization },
+                    stringResource(R.string.tag_tasks).takeIf { p.tasks },
+                    stringResource(R.string.tag_saves_audio).takeIf { p.saveAudio },
                 ).joinToString(" · "),
                 style = MaterialTheme.typography.bodyMedium, color = c.inkMuted,
             )
@@ -223,7 +225,7 @@ private fun ProfileRow(p: Profile, isDefault: Boolean, onClick: () -> Unit) {
     }
 }
 
-// --- Editor de perfil (pantalla completa) ------------------------------------
+// --- Profile editor (full screen) -------------------------------------------
 
 @Composable
 fun ProfileEditorPage(app: EscribaApp, profileId: String, padding: PaddingValues, close: () -> Unit) {
@@ -236,7 +238,7 @@ fun ProfileEditorPage(app: EscribaApp, profileId: String, padding: PaddingValues
 
     var name by remember(profile) { mutableStateOf(profile.name) }
     var folder by remember(profile) { mutableStateOf(profile.folder) }
-    var continuous by remember(profile) { mutableStateOf(profile.mode == "continuo") }
+    var continuous by remember(profile) { mutableStateOf(profile.continuous) }
     var favorite by remember(profile) { mutableStateOf(profile.favorite) }
     var saveAudio by remember(profile) { mutableStateOf(profile.saveAudio) }
     var diarization by remember(profile) { mutableStateOf(profile.diarization) }
@@ -250,57 +252,57 @@ fun ProfileEditorPage(app: EscribaApp, profileId: String, padding: PaddingValues
     var saving by remember { mutableStateOf(false) }
 
     Page(padding) {
-        (ownProps["hereda"] as? YamlValue.Text)?.value?.let { parent ->
-            Text("Hereda de «$parent». Lo que cambies aquí se guarda solo en este perfil.", style = MaterialTheme.typography.bodyMedium, color = c.inkMuted)
+        (ownProps["inherits"] as? YamlValue.Text)?.value?.let { parent ->
+            Text(stringResource(R.string.inherits_from, parent), style = MaterialTheme.typography.bodyMedium, color = c.inkMuted)
         }
-        Overline("General")
+        Overline(stringResource(R.string.general))
         EsCard {
-            OutlinedTextField(name, { name = it }, label = { Text("Nombre") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(folder, { folder = it }, label = { Text("Carpeta de las notas") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
-                supportingText = { Text("Admite {{yyyy}} y {{MM}}") })
-            Text("Color", style = MaterialTheme.typography.labelLarge, color = c.ink)
+            OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.name)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(folder, { folder = it }, label = { Text(stringResource(R.string.notes_folder)) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                supportingText = { Text(stringResource(R.string.notes_folder_hint)) })
+            Text(stringResource(R.string.color), style = MaterialTheme.typography.labelLarge, color = c.ink)
             ColorPicker(color) { color = it }
-            Text("Icono en el reloj", style = MaterialTheme.typography.labelLarge, color = c.ink)
+            Text(stringResource(R.string.watch_icon), style = MaterialTheme.typography.labelLarge, color = c.ink)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.s2), verticalArrangement = Arrangement.spacedBy(Space.s1)) {
                 ProfileLoader.ICONS.forEach { i ->
                     FilterChip(
-                        selected = icon == i, onClick = { icon = i }, label = { Text(ICON_LABELS[i] ?: i) },
+                        selected = icon == i, onClick = { icon = i }, label = { Text(ICON_LABELS[i]?.let { stringResource(it) } ?: i) },
                         colors = FilterChipDefaults.filterChipColors(selectedContainerColor = c.lapisSoft, selectedLabelColor = c.ink),
                     )
                 }
             }
         }
 
-        Overline("Grabación", Modifier.padding(top = Space.s3))
+        Overline(stringResource(R.string.recording), Modifier.padding(top = Space.s3))
         EsCard {
-            ToggleRow("Modo continuo", "Graba todo el horario; si no, solo cuando pulsas", continuous) { continuous = it }
+            ToggleRow(stringResource(R.string.continuous_mode), stringResource(R.string.continuous_mode_hint), continuous) { continuous = it }
             HorizontalDivider(color = c.rule)
-            ToggleRow("Favorito", "Sale el primero en el reloj", favorite) { favorite = it }
+            ToggleRow(stringResource(R.string.favorite), stringResource(R.string.favorite_hint), favorite) { favorite = it }
         }
 
-        Overline("Procesado", Modifier.padding(top = Space.s3))
+        Overline(stringResource(R.string.processing), Modifier.padding(top = Space.s3))
         EsCard {
-            Text("Motor de transcripción", style = MaterialTheme.typography.labelLarge, color = c.ink)
+            Text(stringResource(R.string.asr_engine), style = MaterialTheme.typography.labelLarge, color = c.ink)
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                 listOf("whisper" to "Whisper", "parakeet" to "Parakeet").forEachIndexed { i, (id, label) ->
                     SegmentedButton(selected = engine == id, onClick = { engine = id }, shape = SegmentedButtonDefaults.itemShape(i, 2)) { Text(label) }
                 }
             }
             Text(
-                if (engine == "parakeet") "Unas 10 veces más rápido; sin vocabulario del perfil." else "Más preciso con nombres propios gracias al vocabulario del perfil.",
+                stringResource(if (engine == "parakeet") R.string.engine_parakeet_hint else R.string.engine_whisper_hint),
                 style = MaterialTheme.typography.bodyMedium, color = c.inkMuted,
             )
             HorizontalDivider(color = c.rule)
-            ToggleRow("Separar quién habla", "Pone el nombre de cada voz en la transcripción", diarization) { diarization = it }
+            ToggleRow(stringResource(R.string.toggle_diarization), stringResource(R.string.toggle_diarization_hint), diarization) { diarization = it }
             HorizontalDivider(color = c.rule)
-            ToggleRow("Extraer tareas", "Con responsable y fecha cuando se mencionen", tasks) { tasks = it }
+            ToggleRow(stringResource(R.string.toggle_tasks), stringResource(R.string.toggle_tasks_hint), tasks) { tasks = it }
             HorizontalDivider(color = c.rule)
-            ToggleRow("Descartar lo trivial", "No escribe nota de conversaciones sin contenido", discard) { discard = it }
+            ToggleRow(stringResource(R.string.toggle_discard), stringResource(R.string.toggle_discard_hint), discard) { discard = it }
             HorizontalDivider(color = c.rule)
-            ToggleRow("Guardar el audio en la bóveda", "Junto a la nota, para escucharlo luego", saveAudio) { saveAudio = it }
+            ToggleRow(stringResource(R.string.toggle_save_audio), stringResource(R.string.toggle_save_audio_hint), saveAudio) { saveAudio = it }
         }
 
-        Overline("Instrucciones para el resumen", Modifier.padding(top = Space.s3))
+        Overline(stringResource(R.string.summary_instructions), Modifier.padding(top = Space.s3))
         OutlinedTextField(prompt, { prompt = it }, modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp), textStyle = MaterialTheme.typography.bodyLarge)
 
         error?.let { Text(it, color = c.danger, style = MaterialTheme.typography.bodyMedium) }
@@ -308,7 +310,7 @@ fun ProfileEditorPage(app: EscribaApp, profileId: String, padding: PaddingValues
             Button(enabled = !saving, onClick = {
                 saving = true
                 scope.launch {
-                    // Solo se escriben las propiedades que han cambiado: lo heredado sigue heredándose.
+                    // Only the properties that changed are written: what's inherited stays inherited.
                     val changes = linkedMapOf<String, YamlValue>()
                     fun set(key: String, value: YamlValue, inherited: Any) {
                         val now = when (value) {
@@ -318,33 +320,33 @@ fun ProfileEditorPage(app: EscribaApp, profileId: String, padding: PaddingValues
                         }
                         if (key in ownProps || now != inherited) changes[key] = value
                     }
-                    set("nombre", YamlValue.Text(name.trim()), profile.name)
-                    set("carpeta", YamlValue.Text(folder.trim()), profile.folder)
-                    set("icono", YamlValue.Text(icon), profile.icon)
+                    set("name", YamlValue.Text(name.trim()), profile.name)
+                    set("folder", YamlValue.Text(folder.trim()), profile.folder)
+                    set("icon", YamlValue.Text(icon), profile.icon)
                     set("color", YamlValue.Text(color), profile.color)
-                    set("modo", YamlValue.Text(if (continuous) "continuo" else "bajo_demanda"), profile.mode)
-                    set("favorito", YamlValue.Bool(favorite), profile.favorite)
-                    set("guardar_audio", YamlValue.Bool(saveAudio), profile.saveAudio)
-                    set("diarizacion", YamlValue.Bool(diarization), profile.diarization)
-                    set("motor", YamlValue.Text(engine), profile.engine)
-                    set("tareas", YamlValue.Bool(tasks), profile.tasks)
-                    set("descartar_triviales", YamlValue.Bool(discard), profile.discardTrivial)
+                    set("mode", YamlValue.Text(if (continuous) ProfileLoader.MODE_CONTINUOUS else ProfileLoader.MODE_ON_DEMAND), profile.mode)
+                    set("favorite", YamlValue.Bool(favorite), profile.favorite)
+                    set("save_audio", YamlValue.Bool(saveAudio), profile.saveAudio)
+                    set("diarization", YamlValue.Bool(diarization), profile.diarization)
+                    set("engine", YamlValue.Text(engine), profile.engine)
+                    set("tasks", YamlValue.Bool(tasks), profile.tasks)
+                    set("discard_trivial", YamlValue.Bool(discard), profile.discardTrivial)
                     val own = opened?.first?.let { ProfileLoader.extractPrompt(Frontmatter.parse(it).first.body) }.orEmpty()
                     val promptToSave = if (own.isEmpty() && prompt.trim() == profile.prompt.trim()) null else prompt
                     app.profiles.saveProfile(profile.id, changes, promptToSave, opened?.second)
                         .onSuccess { close() }
                         .onFailure { error = it.message; saving = false }
                 }
-            }) { Text("Guardar") }
-            OutlinedButton(onClick = close) { Text("Cancelar") }
+            }) { Text(stringResource(R.string.save)) }
+            OutlinedButton(onClick = close) { Text(stringResource(R.string.cancel)) }
         }
     }
 }
 
-/** Los seis colores de perfil del sistema, por su valor claro (el que se guarda en la bóveda). */
+/** The system's six profile colours, by their light value (the one saved in the vault). */
 private val PROFILE_COLORS = listOf(
-    "pino" to "#2E6B3A", "lapislázuli" to "#2C4DA8", "ocre" to "#835400",
-    "ciruela" to "#7A2F73", "pizarra" to "#3F5466", "teja" to "#9C3D1C",
+    R.string.color_pine to "#2E6B3A", R.string.color_lapis to "#2C4DA8", R.string.color_ochre to "#835400",
+    R.string.color_plum to "#7A2F73", R.string.color_slate to "#3F5466", R.string.color_terracotta to "#9C3D1C",
 )
 
 @Composable
@@ -354,12 +356,13 @@ private fun ColorPicker(selected: String, onPick: (String) -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(Space.s3)) {
         PROFILE_COLORS.forEach { (name, hex) ->
             val swatch = c.profileColor(hex)
+            val label = stringResource(R.string.color_named, stringResource(name))
             val isSelected = swatch == current
             Box(
                 Modifier.size(36.dp).clip(CircleShape).background(swatch)
                     .border(2.dp, if (isSelected) c.ink else c.paperRaised, CircleShape)
                     .clickable { onPick(hex) }
-                    .semantics { contentDescription = "Color $name" },
+                    .semantics { contentDescription = label },
                 contentAlignment = Alignment.Center,
             ) {
                 if (isSelected) Icon(Icons.Rounded.Check, null, Modifier.size(18.dp), tint = c.paperRaised)
@@ -378,22 +381,21 @@ private fun NewProfileDialog(app: EscribaApp, profiles: List<Profile>, close: ()
     var error by remember { mutableStateOf<String?>(null) }
     AlertDialog(
         onDismissRequest = close,
-        title = { Text("Nuevo perfil") },
+        title = { Text(stringResource(R.string.new_profile)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
-                OutlinedTextField(name, { name = it }, label = { Text("Nombre") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
-                    supportingText = { Text("P. ej. «Reuniones Acme»") })
-                Text("Color", style = MaterialTheme.typography.labelLarge, color = c.ink)
+                OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.name)) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                    supportingText = { Text(stringResource(R.string.new_profile_example)) })
+                Text(stringResource(R.string.color), style = MaterialTheme.typography.labelLarge, color = c.ink)
                 ColorPicker(color) { color = it }
-                Text("Basado en", style = MaterialTheme.typography.labelLarge, color = c.ink)
+                Text(stringResource(R.string.based_on), style = MaterialTheme.typography.labelLarge, color = c.ink)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.s2), verticalArrangement = Arrangement.spacedBy(Space.s1)) {
                     val chip = FilterChipDefaults.filterChipColors(selectedContainerColor = c.lapisSoft, selectedLabelColor = c.ink)
-                    FilterChip(selected = basedOn == null, onClick = { basedOn = null }, label = { Text("Ninguno") }, colors = chip)
+                    FilterChip(selected = basedOn == null, onClick = { basedOn = null }, label = { Text(stringResource(R.string.none)) }, colors = chip)
                     profiles.forEach { p -> FilterChip(selected = basedOn == p.id, onClick = { basedOn = p.id }, label = { Text(p.name) }, colors = chip) }
                 }
                 Text(
-                    if (basedOn == null) "Empieza con valores de partida; los ajustas en la siguiente pantalla."
-                    else "Hereda todo de ese perfil: solo se guarda lo que cambies.",
+                    stringResource(if (basedOn == null) R.string.new_profile_defaults else R.string.new_profile_inherits),
                     style = MaterialTheme.typography.bodyMedium, color = c.inkMuted,
                 )
                 error?.let { Text(it, color = c.danger, style = MaterialTheme.typography.bodyMedium) }
@@ -406,15 +408,16 @@ private fun NewProfileDialog(app: EscribaApp, profiles: List<Profile>, close: ()
                         .onSuccess(created)
                         .onFailure { error = it.message }
                 }
-            }) { Text("Crear") }
+            }) { Text(stringResource(R.string.create)) }
         },
-        dismissButton = { TextButton(onClick = close) { Text("Cancelar") } },
+        dismissButton = { TextButton(onClick = close) { Text(stringResource(R.string.cancel)) } },
     )
 }
 
 private val ICON_LABELS = mapOf(
-    "mic" to "Micrófono", "maletin" to "Maletín", "idea" to "Idea", "casa" to "Casa", "persona" to "Persona",
-    "grupo" to "Grupo", "telefono" to "Teléfono", "coche" to "Coche", "libro" to "Libro", "estrella" to "Estrella",
+    "mic" to R.string.icon_mic, "briefcase" to R.string.icon_briefcase, "idea" to R.string.icon_idea, "home" to R.string.icon_home,
+    "person" to R.string.icon_person, "group" to R.string.icon_group, "phone" to R.string.icon_phone, "car" to R.string.icon_car,
+    "book" to R.string.icon_book, "star" to R.string.icon_star,
 )
 
 @Composable
@@ -433,7 +436,7 @@ private fun ToggleRow(title: String, subtitle: String, checked: Boolean, onChang
     }
 }
 
-// --- Almacenamiento y retención ----------------------------------------------
+// --- Storage and retention ---------------------------------------------------
 
 @Composable
 fun StoragePage(app: EscribaApp, padding: PaddingValues) {
@@ -446,31 +449,33 @@ fun StoragePage(app: EscribaApp, padding: PaddingValues) {
     val inVault = notes.filter { it.audioPath != null && it.audioDeletedAtMs == null }
 
     Page(padding) {
-        Overline("En este móvil")
+        Overline(stringResource(R.string.on_this_phone))
         EsCard {
-            Text("%.1f MB de audio".format(onPhone.sumOf { it.bytes } / 1_048_576.0), style = Escriba.type.metric, color = c.ink)
-            Text("${onPhone.size} sesiones con audio. Se borra ${set?.config?.phoneAudioRetentionDays ?: 7} días después de escribir su nota (retencion_audio_movil en escriba.md).",
+            Text(stringResource(R.string.audio_mb, onPhone.sumOf { it.bytes } / 1_048_576.0), style = Escriba.type.metric, color = c.ink)
+            Text(
+                pluralStringResource(R.plurals.sessions_with_audio, onPhone.size, onPhone.size) + " " +
+                    stringResource(R.string.phone_retention, set?.config?.phoneAudioRetentionDays ?: 7),
                 style = MaterialTheme.typography.bodyMedium, color = c.inkMuted)
         }
-        Overline("En la bóveda", Modifier.padding(top = Space.s3))
+        Overline(stringResource(R.string.in_the_vault), Modifier.padding(top = Space.s3))
         EsCard {
-            Text("${inVault.size} audios junto a sus notas", style = MaterialTheme.typography.titleSmall, color = c.ink)
+            Text(pluralStringResource(R.plurals.vault_audios, inVault.size, inVault.size), style = MaterialTheme.typography.titleSmall, color = c.ink)
             set?.profiles?.values?.forEach { p ->
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
                     ProfileDot(c.profileColor(p.color))
                     Text(p.name, style = MaterialTheme.typography.bodyMedium, color = c.ink, modifier = Modifier.weight(1f))
                     Text(
                         when {
-                            !p.saveAudio -> "No guarda audio"
-                            p.audioRetentionDays == null -> "Se guarda siempre"
-                            else -> "Se borra a los ${p.audioRetentionDays} días"
+                            !p.saveAudio -> stringResource(R.string.no_audio_saved)
+                            p.audioRetentionDays == null -> stringResource(R.string.kept_forever)
+                            else -> pluralStringResource(R.plurals.deleted_after_days, p.audioRetentionDays!!, p.audioRetentionDays!!)
                         },
                         style = MaterialTheme.typography.bodyMedium, color = c.inkMuted,
                     )
                 }
             }
         }
-        Text("La limpieza se hace sola una vez al día. Las notas no se borran nunca: solo el audio, y la nota lo indica.", style = MaterialTheme.typography.bodyMedium, color = c.inkMuted)
-        OutlinedButton(onClick = { RetentionWorker.runNow(app); ran = true }, enabled = !ran) { Text(if (ran) "Limpieza en marcha" else "Limpiar ahora el audio caducado") }
+        Text(stringResource(R.string.cleanup_hint), style = MaterialTheme.typography.bodyMedium, color = c.inkMuted)
+        OutlinedButton(onClick = { RetentionWorker.runNow(app); ran = true }, enabled = !ran) { Text(stringResource(if (ran) R.string.cleanup_running else R.string.cleanup_now)) }
     }
 }

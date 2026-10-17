@@ -9,6 +9,7 @@ import dev.escriba.shared.Protocol
 import dev.escriba.shared.audio.VadSensitivity
 import dev.escriba.shared.recording.DailyWindow
 import dev.escriba.shared.vault.ProfileList
+import dev.escriba.shared.vault.ProfileLoader
 import dev.escriba.shared.vault.WatchProfile
 import dev.escriba.wear.recorder.RecordingMode
 import dev.escriba.wear.recorder.RecordingState
@@ -16,13 +17,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * Perfiles en el reloj. Los define el móvil (a partir de la bóveda) y llegan cifrados; el reloj
- * guarda la última lista para poder grabar aunque el móvil no esté cerca.
+ * Profiles on the watch. The phone defines them (from the vault) and they arrive encrypted; the
+ * watch keeps the last list so it can record even when the phone isn't nearby.
  */
 class WatchProfiles(context: Context, private val link: DataLayerLink) {
 
     private val appContext = context.applicationContext
-    private val prefs = appContext.getSharedPreferences("perfiles", Context.MODE_PRIVATE)
+    private val prefs = appContext.getSharedPreferences("profiles", Context.MODE_PRIVATE)
 
     private val _list = MutableStateFlow(prefs.getString(KEY_LIST, null)?.let { runCatching { EscribaJson.decodeFromString<ProfileList>(it) }.getOrNull() })
     val list: StateFlow<ProfileList?> = _list
@@ -36,7 +37,7 @@ class WatchProfiles(context: Context, private val link: DataLayerLink) {
             prefs.edit().putString(KEY_LIST, EscribaJson.encodeToString(received)).apply()
             _list.value = received
             _selected.value = resolveSelected(received, _selected.value?.id)
-            AppLog.i(TAG, "Perfiles recibidos: ${received.profiles.joinToString { it.name }} · horario ${received.schedule}")
+            AppLog.i(TAG, "Profiles received: ${received.profiles.joinToString { it.name }} · schedule ${received.schedule}")
             RecordingState.refreshSurfaces(appContext)
         }
     }
@@ -48,7 +49,7 @@ class WatchProfiles(context: Context, private val link: DataLayerLink) {
         RecordingState.refreshSurfaces(appContext)
     }
 
-    /** El perfil siguiente al elegido (favoritos primero, como los ordena el móvil). */
+    /** The profile after the chosen one (favourites first, as the phone orders them). */
     fun nextId(): String? {
         val profiles = _list.value?.profiles.orEmpty()
         if (profiles.isEmpty()) return null
@@ -60,7 +61,7 @@ class WatchProfiles(context: Context, private val link: DataLayerLink) {
         nextId()?.let(::select)
     }
 
-    /** Perfiles para el Tile: los favoritos y, si sobran huecos, los demás. */
+    /** Profiles for the Tile: the favourites and, if there are slots left, the rest. */
     fun forTile(slots: Int): List<WatchProfile> {
         val profiles = _list.value?.profiles.orEmpty()
         return (profiles.filter { it.favorite } + profiles.filterNot { it.favorite }).take(slots)
@@ -69,10 +70,10 @@ class WatchProfiles(context: Context, private val link: DataLayerLink) {
     suspend fun requestFromPhone(): Boolean =
         runCatching { link.sendSealed(Protocol.PATH_PROFILES_REQUEST, ProfilesRequest(_list.value?.hash)) }.getOrDefault(false)
 
-    /** Ajustes efectivos de una grabación: los del perfil o, si no hay perfiles, los locales. */
+    /** Effective settings of a recording: the profile's or, if there are no profiles, the local ones. */
     fun modeOf(profile: WatchProfile?, fallback: RecordingMode): RecordingMode = when (profile?.mode) {
-        "continuo" -> RecordingMode.CONTINUO
-        "bajo_demanda" -> RecordingMode.BAJO_DEMANDA
+        ProfileLoader.MODE_CONTINUOUS -> RecordingMode.CONTINUOUS
+        ProfileLoader.MODE_ON_DEMAND -> RecordingMode.ON_DEMAND
         else -> fallback
     }
 
@@ -87,8 +88,8 @@ class WatchProfiles(context: Context, private val link: DataLayerLink) {
     }
 
     private companion object {
-        const val TAG = "perfiles"
-        const val KEY_LIST = "lista"
-        const val KEY_SELECTED = "elegido"
+        const val TAG = "profiles"
+        const val KEY_LIST = "list"
+        const val KEY_SELECTED = "selected"
     }
 }

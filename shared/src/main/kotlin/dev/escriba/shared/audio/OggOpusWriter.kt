@@ -4,13 +4,13 @@ import java.io.Closeable
 import java.io.OutputStream
 
 /**
- * Empaqueta paquetes Opus ya codificados en un flujo Ogg.
+ * Packs already-encoded Opus packets into an Ogg stream.
  *
- * Agrupa muchos paquetes por página (por defecto 50 = 1 s a 20 ms). El empaquetador del
- * sistema escribe una página por paquete, y eso añade un 45 % de tamaño a 24 kbps.
+ * Groups many packets per page (50 by default = 1 s at 20 ms). The system muxer writes one page
+ * per packet, which adds 45 % to the size at 24 kbps.
  *
- * Cada página se vuelca al flujo nada más completarse. Si el proceso muere, el archivo
- * sigue siendo válido hasta la última página entera: como mucho se pierde 1 s de audio.
+ * Each page is flushed as soon as it's complete. If the process dies, the file stays valid up to
+ * the last full page: at most 1 s of audio is lost.
  */
 class OggOpusWriter(
     private val out: OutputStream,
@@ -26,7 +26,7 @@ class OggOpusWriter(
     private val pending = ArrayList<ByteArray>()
     private var closed = false
 
-    /** Muestras de audio a 48 kHz escritas hasta ahora (incluye el pre-skip). */
+    /** Audio samples at 48 kHz written so far (including the pre-skip). */
     val granulePosition: Long get() = granule
 
     var bytesWritten = 0L
@@ -39,15 +39,15 @@ class OggOpusWriter(
     }
 
     fun writePacket(packet: ByteArray) {
-        check(!closed) { "Escritor cerrado" }
-        require(packet.size < Ogg.MAX_SEGMENTS * 255) { "Paquete Opus demasiado grande: ${packet.size}" }
+        check(!closed) { "Writer closed" }
+        require(packet.size < Ogg.MAX_SEGMENTS * 255) { "Opus packet too large: ${packet.size}" }
         if (pending.isNotEmpty() && lacingCount(pending) + lacingValues(packet) > Ogg.MAX_SEGMENTS) {
             flushPending(flags = 0)
         }
         pending += packet
         granule += Ogg.opusPacketSamples(packet)
-        // Se deja siempre un paquete pendiente: así la última página, con la marca EOS,
-        // nunca queda vacía.
+        // One packet is always kept pending, so the last page (the one with the EOS flag) is
+        // never empty.
         if (pending.size > packetsPerPage) {
             val last = pending.removeAt(pending.lastIndex)
             flushPending(flags = 0, granuleOverride = granule - Ogg.opusPacketSamples(last))
@@ -76,12 +76,12 @@ class OggOpusWriter(
         val bodySize = packets.sumOf { it.size }
         val page = ByteArray(Ogg.HEADER_BYTES + lacing.size + bodySize)
         Ogg.CAPTURE_PATTERN.encodeToByteArray().copyInto(page)
-        page[4] = 0 // versión
+        page[4] = 0 // version
         page[5] = flags.toByte()
         Ogg.putLe(page, 6, granule, 8)
         Ogg.putLe(page, 14, serial.toLong(), 4)
         Ogg.putLe(page, 18, pageSequence++.toLong(), 4)
-        // 22-25: CRC, se calcula con el campo a cero
+        // 22-25: CRC, computed with the field set to zero
         page[26] = lacing.size.toByte()
         lacing.forEachIndexed { i, v -> page[Ogg.HEADER_BYTES + i] = v.toByte() }
         var pos = Ogg.HEADER_BYTES + lacing.size

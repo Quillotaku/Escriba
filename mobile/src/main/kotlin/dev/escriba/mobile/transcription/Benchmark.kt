@@ -1,8 +1,10 @@
 package dev.escriba.mobile.transcription
 
+import android.content.Context
 import dev.escriba.datalayer.AppLog
 import dev.escriba.llm.LlamaEngine
 import dev.escriba.mobile.data.EscribaDb
+import dev.escriba.mobile.R
 import dev.escriba.mobile.llm.Summarizer
 import dev.escriba.mobile.processing.SessionProcessor
 import dev.escriba.mobile.vault.ProfileRepository
@@ -15,8 +17,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import java.time.ZoneId
 
-/** Pruebas de rendimiento con sesiones reales: Whisper (fase 6a) y el LLM (fase 7). */
+/** Benchmarks with real sessions: speech recognition and the LLM. */
 class Benchmark(
+    private val context: Context,
     private val scope: CoroutineScope,
     private val db: EscribaDb,
     private val transcriber: Transcriber,
@@ -39,49 +42,49 @@ class Benchmark(
     fun run(sessionId: String, modelName: String, threads: Int, flashAttn: Boolean, fast: Boolean) {
         if (_state.value is State.Running) return
         scope.launch {
-            _state.value = State.Running("Cargando $modelName…")
+            _state.value = State.Running(context.getString(R.string.bench_loading, modelName))
             runCatching {
                 val fragments = db.sessions().fragments(sessionId)
-                check(fragments.isNotEmpty()) { "La sesión no tiene fragmentos" }
-                // Parakeet aparece en la lista con el nombre de su modelo.
-                val motor = if (modelName == ParakeetAsr.MODEL_NAME) Transcriber.Motor.PARAKEET else Transcriber.Motor.WHISPER
-                transcriber.open(modelName, flashAttn, motor).use { session ->
-                    _state.value = State.Running("Transcribiendo ${fragments.size} fragmentos con $threads hilos…")
-                    session.transcribe(fragments, language = "es", vocabulary = emptyList(), threads = threads, fast = fast)
+                check(fragments.isNotEmpty()) { "The session has no fragments" }
+                // Parakeet shows up in the list with its model name.
+                val engine = if (modelName == ParakeetAsr.MODEL_NAME) Transcriber.Engine.PARAKEET else Transcriber.Engine.WHISPER
+                transcriber.open(modelName, flashAttn, engine).use { session ->
+                    _state.value = State.Running(context.getString(R.string.bench_transcribing, fragments.size, threads))
+                    session.transcribe(fragments, language = "auto", vocabulary = emptyList(), threads = threads, fast = fast)
                 }
             }.onSuccess {
-                // El desglose que imprime whisper.cpp (las últimas líneas con «time =»).
+                // The breakdown whisper.cpp prints (the last lines with "time =").
                 val timings = if (it.stats.model == ParakeetAsr.MODEL_NAME) "" else WhisperEngine.nativeLog().lines().filter { "time =" in it }.takeLast(8).joinToString("\n") { it.trim() }
-                AppLog.i("transcripcion", "Desglose: " + timings.replace("\n", " | "))
+                AppLog.i("transcription", "Breakdown: " + timings.replace("\n", " | "))
                 _state.value = State.Done(it, timings)
             }.onFailure {
-                AppLog.e("transcripcion", "Falló la prueba", it)
+                AppLog.e("transcription", "The benchmark failed", it)
                 _state.value = State.Failed((it.message ?: it.javaClass.simpleName) + "\n" + WhisperEngine.nativeLog().takeLast(800))
             }
         }
     }
 
-    /** Resume la transcripción ya guardada de una sesión con el perfil con que se procesó. */
+    /** Summarizes a session's stored transcript with the profile it was processed with. */
     fun runLlm(sessionId: String, modelName: String) {
         if (_state.value is State.Running) return
         scope.launch {
-            _state.value = State.Running("Cargando $modelName…")
+            _state.value = State.Running(context.getString(R.string.bench_loading, modelName))
             runCatching {
                 val dao = db.sessions()
-                val transcript = dao.transcript(sessionId) ?: error("Esa sesión aún no está transcrita")
+                val transcript = dao.transcript(sessionId) ?: error("That session isn't transcribed yet")
                 val lines = EscribaJson.decodeFromString<List<TranscriptLine>>(transcript.linesJson)
-                val set = profiles.reload() ?: error("No se pudo leer la bóveda")
-                val session = dao.session(sessionId) ?: error("La sesión no existe")
-                val profile = set.profiles[session.processedProfileId ?: session.profileId] ?: set.defaultProfile ?: error("Sin perfiles")
+                val set = profiles.reload() ?: error("Couldn't read the vault")
+                val session = dao.session(sessionId) ?: error("The session doesn't exist")
+                val profile = set.profiles[session.processedProfileId ?: session.profileId] ?: set.defaultProfile ?: error("No profiles")
                 val zone = runCatching { ZoneId.of(set.config.timeZone) }.getOrDefault(ZoneId.systemDefault())
                 summarizer.open(modelName).use { s ->
-                    _state.value = State.Running("Resumiendo ${lines.size} frases con $modelName (perfil ${profile.name})…")
+                    _state.value = State.Running(context.getString(R.string.bench_summarizing, lines.size, modelName, profile.name))
                     s.summarize(lines, profile, processor.knownEntities(set.config), zone)
                 }
             }.onSuccess {
                 _state.value = State.LlmDone(it)
             }.onFailure {
-                AppLog.e("resumen", "Falló la prueba del LLM", it)
+                AppLog.e("summary", "The LLM benchmark failed", it)
                 _state.value = State.Failed((it.message ?: it.javaClass.simpleName) + "\n" + LlamaEngine.nativeLog().takeLast(800))
             }
         }

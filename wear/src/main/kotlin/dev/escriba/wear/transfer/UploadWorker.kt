@@ -14,8 +14,8 @@ import dev.escriba.wear.EscribaWearApp
 import java.util.concurrent.TimeUnit
 
 /**
- * Ejecuta el [Uploader] en segundo plano. WorkManager sobrevive a que el sistema mate la
- * app: si quedó algo por enviar, se reintenta en el siguiente ciclo (cada 15 minutos).
+ * Runs the [Uploader] in the background. WorkManager survives the system killing the app: if
+ * something was left to send, it's retried on the next cycle (every 15 minutes).
  */
 class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
 
@@ -23,20 +23,20 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         val app = applicationContext as EscribaWearApp
         val manual = inputData.getBoolean(KEY_MANUAL, false)
         val outcome = runCatching { app.uploader.run(manual) }
-            .onFailure { AppLog.e("envio", "El envío falló", it) }
+            .onFailure { AppLog.e("upload", "The upload failed", it) }
             .getOrNull()
         if (outcome != null && outcome != Uploader.Outcome.NOTHING_TO_DO && outcome != Uploader.Outcome.WAITING_FOR_BATCH) {
-            AppLog.i("envio", "Ciclo de envío: ${outcome.name.lowercase()}")
+            AppLog.i("upload", "Upload cycle: ${outcome.name.lowercase()}")
         }
         return Result.success()
     }
 
     companion object {
         private const val KEY_MANUAL = "manual"
-        private const val PERIODIC = "envio-periodico"
-        private const val NOW = "envio-ahora"
+        private const val PERIODIC = "upload-periodic"
+        private const val NOW = "upload-now"
 
-        /** Revisión periódica: recoge lo que se quedó sin enviar (sin móvil cerca, app muerta…). */
+        /** Periodic check: picks up whatever was left unsent (no phone nearby, app killed…). */
         fun ensurePeriodic(context: Context) {
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
                 PERIODIC,
@@ -45,7 +45,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             )
         }
 
-        /** Intento inmediato: tras cerrar un fragmento o una sesión, o a petición del usuario. */
+        /** Immediate attempt: after closing a fragment or a session, or when the user asks. */
         fun kick(context: Context, manual: Boolean = false) {
             WorkManager.getInstance(context).enqueueUniqueWork(
                 NOW,

@@ -2,7 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Privacidad: ninguna dependencia puede colar acceso a la red. -->
+    <!-- Privacy: no dependency can sneak in network access. -->
     <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
@@ -48,7 +48,7 @@
                     android:scheme="wear" />
             </intent-filter>
         </service>
-        <!-- WorkManager ejecuta el procesado largo (transcripción) como servicio en primer plano. -->
+        <!-- WorkManager runs the long processing (transcription) as a foreground service. -->
         <service
             android:name="androidx.work.impl.foreground.SystemForegroundService"
             android:foregroundServiceType="mediaProcessing"

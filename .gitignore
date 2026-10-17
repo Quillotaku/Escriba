@@ -12,12 +12,18 @@ captures/
 *.aab
 *.keystore
 *.jks
-# Modelos y audio de prueba: nunca al repositorio
+# Models and test audio: never in the repository
 *.gguf
 *.onnx
 *.bin
 *.ogg
 *.wav
 spike-out/
-# Librerías binarias descargadas (sherpa-onnx): no van al repositorio
+# Downloaded binary libraries (sherpa-onnx): they don't go in the repository
 *.aar
+docs/alternativas.md
+docs/arquitectura.md
+docs/fase1-spikes.md
+docs/fase2-resultados.md
+docs/seguridad.md
+docs/testing.md

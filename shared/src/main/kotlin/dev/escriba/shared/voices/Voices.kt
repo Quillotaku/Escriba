@@ -4,25 +4,32 @@ import dev.escriba.shared.transcription.TranscriptLine
 import kotlinx.serialization.Serializable
 import kotlin.math.sqrt
 
-/** Tramo de un hablante según la diarización, en hora real. */
+/** A speaker's turn according to diarization, in real time. */
 @Serializable
 data class SpeakerTurn(val wallStartMs: Long, val wallEndMs: Long, val cluster: Int)
 
-/** Voz registrada por el usuario («Yo», «Ana López»…): solo vive en el móvil. */
+/** A voice enrolled by the user ("Me", "Ana López"…): it only lives on the phone. */
 data class EnrolledVoice(val name: String, val embedding: FloatArray)
 
-/** Resultado de la diarización ya limpio: hablantes numerados 0, 1, 2… por orden de aparición. */
+/** Cleaned-up diarization result: speakers numbered 0, 1, 2… in order of appearance. */
 data class Speakers(val turns: List<SpeakerTurn>, val embeddings: Map<Int, FloatArray>, val speechMs: Map<Int, Long>)
 
 object VoiceMath {
 
+    /** Label of a speaker that wasn't recognized: "Speaker 1", "Speaker 2"… */
+    const val UNKNOWN_PREFIX = "Speaker"
+
+    /** The usual name for the user's own voice. */
+    const val ME = "Me"
+
     /**
-     * La agrupación de la diarización tiende a partir a una misma persona en varios hablantes
-     * (cambios de tono, ruido, frases cortas). Aquí se arregla en dos pasos:
-     *  1. se unen los hablantes cuyas huellas se parecen más que [minSimilarity];
-     *  2. los que hablan menos de [minSpeechMs] no cuentan como hablante: con tan poca voz su
-     *     huella es poco fiable y casi siempre son trozos de alguien que ya está. Se unen al
-     *     hablante principal más parecido o, si no tienen huella, al del tramo más cercano.
+     * Diarization clustering tends to split one person into several speakers (changes of tone,
+     * noise, short sentences). This fixes it in two steps:
+     *  1. speakers whose voiceprints are more similar than [minSimilarity] are merged;
+     *  2. those who speak for less than [minSpeechMs] don't count as speakers: with so little
+     *     speech their voiceprint is unreliable and they're almost always pieces of someone
+     *     already there. They join the most similar main speaker or, without a voiceprint, the
+     *     speaker of the nearest turn.
      */
     fun merge(
         turns: List<SpeakerTurn>,
@@ -33,7 +40,7 @@ object VoiceMath {
     ): Speakers {
         val emb = HashMap(embeddings.mapValues { normalized(it.value) })
         val speech = HashMap(speechMs)
-        val target = HashMap<Int, Int>() // hablante → en quién se ha fusionado
+        val target = HashMap<Int, Int>() // speaker → who it was merged into
         fun root(c: Int): Int {
             var r = c
             while (true) r = target[r] ?: return r
@@ -47,7 +54,7 @@ object VoiceMath {
                 if (sim >= minSimilarity && (best == null || sim > best.third)) best = Triple(ids[i], ids[j], sim)
             }
             val (a, b, _) = best ?: break
-            // El que más habla se queda; su huella pasa a ser la media ponderada por tiempo de voz.
+            // The one who speaks more stays; its voiceprint becomes the average weighted by speech time.
             val (keep, drop) = if ((speech[a] ?: 0) >= (speech[b] ?: 0)) a to b else b to a
             val wk = (speech[keep] ?: 1).toFloat().coerceAtLeast(1f)
             val wd = (speech[drop] ?: 1).toFloat().coerceAtLeast(1f)
@@ -74,7 +81,7 @@ object VoiceMath {
             }
         }
 
-        // Numeración final por orden de aparición.
+        // Final numbering in order of appearance.
         val order = merged.sortedBy { it.wallStartMs }.map { it.cluster }.distinct()
         val renumber = order.withIndex().associate { (i, c) -> c to i }
         val finalTurns = merged.map { it.copy(cluster = renumber.getValue(it.cluster)) }
@@ -92,7 +99,7 @@ object VoiceMath {
     }
 
     fun cosine(a: FloatArray, b: FloatArray): Float {
-        require(a.size == b.size) { "Huellas de distinto tamaño: ${a.size} y ${b.size}" }
+        require(a.size == b.size) { "Voiceprints of different sizes: ${a.size} and ${b.size}" }
         var dot = 0.0
         var na = 0.0
         var nb = 0.0
@@ -105,7 +112,7 @@ object VoiceMath {
         return (dot / (sqrt(na) * sqrt(nb))).toFloat()
     }
 
-    /** Media normalizada de varias huellas (p. ej. al registrar una voz con varias sesiones). */
+    /** Normalized average of several voiceprints (e.g. when enrolling a voice from several sessions). */
     fun average(embeddings: List<FloatArray>): FloatArray {
         require(embeddings.isNotEmpty())
         val out = FloatArray(embeddings.first().size)
@@ -118,8 +125,8 @@ object VoiceMath {
     }
 
     /**
-     * Pone a cada frase el hablante con el que más se solapa en el tiempo. Una frase sin solape
-     * (p. ej. en un hueco entre tramos) toma el hablante del tramo más cercano.
+     * Gives every sentence the speaker it overlaps most in time. A sentence with no overlap (e.g.
+     * in a gap between turns) takes the speaker of the nearest turn.
      */
     fun assign(lines: List<TranscriptLine>, turns: List<SpeakerTurn>, label: (Int) -> String): List<TranscriptLine> {
         if (turns.isEmpty()) return lines
@@ -137,9 +144,9 @@ object VoiceMath {
     }
 
     /**
-     * Reconoce los hablantes de una sesión comparando sus huellas con las voces registradas.
-     * Cada voz registrada se asigna como mucho a un hablante (al más parecido), y solo si la
-     * similitud supera [threshold]. Lo que no se reconoce queda como «Hablante N».
+     * Recognizes a session's speakers by comparing their voiceprints with the enrolled voices.
+     * Each enrolled voice goes to at most one speaker (the most similar), and only if the
+     * similarity is over [threshold]. Whatever isn't recognized stays as "Speaker N".
      */
     fun identify(clusters: Map<Int, FloatArray>, enrolled: List<EnrolledVoice>, threshold: Float = 0.5f): Map<Int, String> {
         val pairs = clusters.flatMap { (c, e) -> enrolled.map { v -> Triple(c, v.name, cosine(e, v.embedding)) } }
@@ -152,9 +159,9 @@ object VoiceMath {
             result[cluster] = name
             usedNames += name
         }
-        // Los no reconocidos se numeran en orden de aparición, empezando por 1.
+        // Unrecognized speakers are numbered in order of appearance, starting at 1.
         var n = 1
-        for (c in clusters.keys.sorted()) if (c !in result) result[c] = "Hablante ${n++}"
+        for (c in clusters.keys.sorted()) if (c !in result) result[c] = "$UNKNOWN_PREFIX ${n++}"
         return result
     }
 }

@@ -26,6 +26,7 @@ import dev.escriba.shared.vault.WatchProfile
 import dev.escriba.wear.profiles.WatchProfiles
 import dev.escriba.shared.recording.Fragmenter
 import dev.escriba.wear.EscribaWearApp
+import dev.escriba.wear.R
 import dev.escriba.wear.storage.FragmentStore
 import dev.escriba.wear.storage.SessionMeta
 import dev.escriba.wear.transfer.UploadWorker
@@ -36,12 +37,12 @@ import java.time.format.DateTimeFormatter
 import java.util.UUID
 
 /**
- * Servicio en primer plano de tipo micrófono: graba, filtra la voz con el VAD y guarda
- * fragmentos Opus/Ogg independientes en el reloj.
+ * Microphone-type foreground service: records, filters speech with the VAD and stores
+ * independent Opus/Ogg fragments on the watch.
  *
- * Estados: IDLE → CAPTURING ⇄ PAUSED (fuera del horario, en modo continuo) → IDLE.
- * En pausa el servicio sigue vivo (y con su notificación) pero el micrófono está cerrado:
- * así, al empezar la franja, puede volver a grabar sin que el usuario toque nada.
+ * States: IDLE → CAPTURING ⇄ PAUSED (outside the schedule, in continuous mode) → IDLE.
+ * While paused the service stays alive (with its notification) but the microphone is closed:
+ * that way, when the window starts, it can record again without the user touching anything.
  */
 class RecorderService : Service() {
 
@@ -59,11 +60,11 @@ class RecorderService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var lastChangeElapsed = 0L
     private var origin = ""
-    private var mode = RecordingMode.BAJO_DEMANDA
-    private var sensitivity = VadSensitivity.MEDIA
+    private var mode = RecordingMode.ON_DEMAND
+    private var sensitivity = VadSensitivity.MEDIUM
     private var window = DailyWindow.DEFAULT
     private var profile: WatchProfile? = null
-    /** Perfil al que cambiar cuando termine de cerrarse la sesión actual. */
+    /** Profile to switch to once the current session has finished closing. */
     private var pendingSwitch: String? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -77,7 +78,7 @@ class RecorderService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val origin = intent?.getStringExtra(EXTRA_ORIGIN) ?: "desconocido"
+        val origin = intent?.getStringExtra(EXTRA_ORIGIN) ?: "unknown"
         val phase = RecordingState.phase.value
         when (intent?.action) {
             ACTION_START -> if (phase == RecordingState.Phase.IDLE) start(origin)
@@ -87,15 +88,15 @@ class RecorderService : Service() {
             ACTION_TOGGLE -> {
                 val sinceLastChange = SystemClock.elapsedRealtime() - lastChangeElapsed
                 when {
-                    // Solo con el servicio en marcha: estando parado, la orden llega con
-                    // startForegroundService y hay que atenderla (o Android cierra la app).
+                    // Only with the service running: when stopped, the command arrives through
+                    // startForegroundService and must be honoured (or Android kills the app).
                     phase != RecordingState.Phase.IDLE && sinceLastChange < TOGGLE_DEBOUNCE_MS ->
-                        AppLog.i(TAG, "Alternancia ignorada: llegó $sinceLastChange ms después de la anterior (origen=$origin)")
+                        AppLog.i(TAG, "Toggle ignored: it came $sinceLastChange ms after the previous one (origin=$origin)")
                     phase == RecordingState.Phase.IDLE -> start(origin)
                     else -> stop(origin)
                 }
             }
-            else -> AppLog.i(TAG, "Arranque sin acción desde $origin; no se graba")
+            else -> AppLog.i(TAG, "Started without an action from $origin; not recording")
         }
         if (RecordingState.phase.value == RecordingState.Phase.IDLE && worker == null) stopSelf()
         return START_NOT_STICKY
@@ -103,20 +104,20 @@ class RecorderService : Service() {
 
     private fun start(origin: String) {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            AppLog.e(TAG, "Sin permiso de micrófono; ábrelo desde la app del reloj")
+            AppLog.e(TAG, "No microphone permission; open the watch app to grant it")
             return
         }
         try {
             ServiceCompat.startForeground(
                 this,
                 RecorderNotifications.ONGOING_ID,
-                RecorderNotifications.ongoing(this, "Escriba graba", profiles.selected.value?.name ?: settings.mode.label, SystemClock.elapsedRealtime()),
+                RecorderNotifications.ongoing(this, getString(R.string.notif_recording), profiles.selected.value?.name ?: getString(settings.mode.label), SystemClock.elapsedRealtime()),
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE,
             )
         } catch (e: Exception) {
-            // Android 14+ lanza SecurityException si el origen no cumple las condiciones de uso
-            // del micrófono en primer plano.
-            AppLog.e(TAG, "startForeground DENEGADO (origen=$origin)", e)
+            // Android 14+ throws SecurityException if the origin doesn't meet the conditions for
+            // using the microphone in the foreground.
+            AppLog.e(TAG, "startForeground DENIED (origin=$origin)", e)
             return
         }
         RecorderNotifications.cancelInterrupted(this)
@@ -124,11 +125,11 @@ class RecorderService : Service() {
         applyProfile()
         recordingIntent.markActive(origin)
         lastChangeElapsed = SystemClock.elapsedRealtime()
-        AppLog.i(TAG, "Inicio (origen=$origin, perfil=${profile?.name ?: "sin perfiles"}, modo=${mode.label}, fuente=${settings.source.label}, VAD=${sensitivity.name.lowercase()})")
+        AppLog.i(TAG, "Start (origin=$origin, profile=${profile?.name ?: "no profiles"}, mode=${mode.name.lowercase()}, source=${settings.source.name.lowercase()}, VAD=${sensitivity.name.lowercase()})")
         captureOrPause()
     }
 
-    /** El perfil elegido manda; los ajustes locales solo se usan si aún no hay perfiles. */
+    /** The chosen profile rules; local settings are only used while there are no profiles yet. */
     private fun applyProfile() {
         profile = profiles.selected.value
         mode = profiles.modeOf(profile, settings.mode)
@@ -137,17 +138,17 @@ class RecorderService : Service() {
     }
 
     private fun captureOrPause() {
-        if (mode == RecordingMode.CONTINUO && !window.contains(LocalTime.now())) enterPause() else beginSession()
+        if (mode == RecordingMode.CONTINUOUS && !window.contains(LocalTime.now())) enterPause() else beginSession()
     }
 
     /**
-     * Cambiar de perfil cierra la sesión en curso y abre otra con el perfil nuevo: cada sesión
-     * tiene un único perfil, que es el que decide carpeta, plantilla y procesado en el móvil.
+     * Switching profile closes the current session and opens another with the new profile: each
+     * session has a single profile, which decides folder, template and processing on the phone.
      */
     private fun switchTo(requested: String, origin: String) {
         val target = if (requested == PROFILE_NEXT) profiles.nextId() else requested
         if (target == null) {
-            AppLog.i(TAG, "No hay perfiles a los que cambiar")
+            AppLog.i(TAG, "No profiles to switch to")
             return
         }
         when (RecordingState.phase.value) {
@@ -157,7 +158,7 @@ class RecorderService : Service() {
             }
             RecordingState.Phase.CAPTURING -> {
                 if (target == profile?.id) return
-                AppLog.i(TAG, "Cambio de perfil a «$target» (origen=$origin): se cierra la sesión actual")
+                AppLog.i(TAG, "Switching profile to \"$target\" (origin=$origin): closing the current session")
                 pendingSwitch = target
                 stopReason = StopReason.SWITCH
             }
@@ -165,7 +166,7 @@ class RecorderService : Service() {
                 cancelWindowAlarm()
                 profiles.select(target)
                 applyProfile()
-                AppLog.i(TAG, "Cambio de perfil en pausa a «${profile?.name}»")
+                AppLog.i(TAG, "Profile switched while paused to \"${profile?.name}\"")
                 captureOrPause()
             }
         }
@@ -175,11 +176,11 @@ class RecorderService : Service() {
         lastChangeElapsed = SystemClock.elapsedRealtime()
         when (RecordingState.phase.value) {
             RecordingState.Phase.CAPTURING -> {
-                AppLog.i(TAG, "Parada solicitada (origen=$origin)")
+                AppLog.i(TAG, "Stop requested (origin=$origin)")
                 stopReason = StopReason.USER
             }
             RecordingState.Phase.PAUSED -> {
-                AppLog.i(TAG, "Parada en pausa (origen=$origin)")
+                AppLog.i(TAG, "Stopped while paused (origin=$origin)")
                 cancelWindowAlarm()
                 finishService()
             }
@@ -190,14 +191,14 @@ class RecorderService : Service() {
     private fun resume() {
         if (RecordingState.phase.value != RecordingState.Phase.PAUSED) return
         cancelWindowAlarm()
-        AppLog.i(TAG, "Reanudación por horario")
+        AppLog.i(TAG, "Resumed by the schedule")
         beginSession()
     }
 
     private fun beginSession() {
         val meta = SessionMeta(
             sessionId = UUID.randomUUID().toString(),
-            profileId = profile?.id ?: "sin-perfil",
+            profileId = profile?.id ?: "no-profile",
             profileHash = profile?.hash ?: "",
             startMs = System.currentTimeMillis(),
             origin = origin,
@@ -218,18 +219,18 @@ class RecorderService : Service() {
             )
         }
         RecordingState.setPhase(this, RecordingState.Phase.CAPTURING)
-        RecorderNotifications.update(this, RecorderNotifications.ongoing(this, "Escriba graba", profile?.name ?: mode.label, startedElapsed))
+        RecorderNotifications.update(this, RecorderNotifications.ongoing(this, getString(R.string.notif_recording), profile?.name ?: getString(mode.label), startedElapsed))
 
         wakeLock = (getSystemService(POWER_SERVICE) as PowerManager)
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "escriba:recorder")
             .apply { acquire(WAKELOCK_TIMEOUT_MS) }
         stopReason = null
-        BatteryLog.append(this, "inicio", 0)
-        AppLog.i(TAG, "Sesión ${meta.sessionId.take(8)} iniciada")
+        BatteryLog.append(this, "start", 0)
+        AppLog.i(TAG, "Session ${meta.sessionId.take(8)} started")
         worker = Thread({ capture(meta) }, "escriba-recorder").also { it.start() }
     }
 
-    @SuppressLint("MissingPermission") // comprobado en start()
+    @SuppressLint("MissingPermission") // checked in start()
     private fun capture(meta: SessionMeta) {
         var reason = StopReason.ERROR
         var recorder: AudioRecord? = null
@@ -245,19 +246,19 @@ class RecorderService : Service() {
                     val header = store.commit(meta, closed)
                     val check = OggInspector.inspect(store.audioFile(header))
                     val speechMs = header.segments.sumOf { it.durationMs }
-                    AppLog.i(TAG, "Fragmento ${header.seq}: ${speechMs / 1000} s de voz en ${header.segments.size} tramos, " +
-                        "${header.sizeBytes / 1024} KB (${kbps(header.sizeBytes, speechMs)} kbps) → ${if (check.ok) "Ogg válido" else "Ogg INVÁLIDO: $check"}")
+                    AppLog.i(TAG, "Fragment ${header.seq}: ${speechMs / 1000} s of speech in ${header.segments.size} segments, " +
+                        "${header.sizeBytes / 1024} KB (${kbps(header.sizeBytes, speechMs)} kbps) → ${if (check.ok) "valid Ogg" else "INVALID Ogg: $check"}")
                     RecordingState.update { it.copy(fragments = it.fragments + 1) }
                     UploadWorker.kick(this)
                     if (store.stats().bytes > MAX_STORAGE_BYTES) {
-                        AppLog.e(TAG, "Almacenamiento lleno: se para la grabación")
+                        AppLog.e(TAG, "Storage full: stopping the recording")
                         stopReason = StopReason.STORAGE
                     }
                 },
             )
             recorder = openRecorder(settings.source)
             recorder.startRecording()
-            AppLog.i(TAG, "Micrófono abierto: fuente=${settings.source.label}")
+            AppLog.i(TAG, "Microphone open: source=${settings.source.name.lowercase()}")
 
             val frame = ShortArray(gate.frameSamples)
             var position = 0L
@@ -265,7 +266,7 @@ class RecorderService : Service() {
             while (stopReason == null) {
                 val read = recorder.read(frame, 0, frame.size, AudioRecord.READ_BLOCKING)
                 if (read != frame.size) {
-                    AppLog.e(TAG, "AudioRecord.read devolvió $read")
+                    AppLog.e(TAG, "AudioRecord.read returned $read")
                     break
                 }
                 gate.process(frame).forEach(fragmenter::onEvent)
@@ -277,30 +278,30 @@ class RecorderService : Service() {
                     RecordingState.update {
                         it.copy(speechPct = speechPct, levelDb = gate.lastDb.toInt(), floorDb = gate.floorDb.toInt(), inSpeech = gate.isInSpeech)
                     }
-                    if (mode == RecordingMode.CONTINUO && !window.contains(LocalTime.now())) {
-                        AppLog.i(TAG, "Fin de la franja $window")
+                    if (mode == RecordingMode.CONTINUOUS && !window.contains(LocalTime.now())) {
+                        AppLog.i(TAG, "End of the window $window")
                         stopReason = StopReason.SCHEDULE
                     }
                     if (frames % (FRAMES_PER_SECOND * BATTERY_LOG_EVERY_S) == 0L) {
-                        BatteryLog.append(this, "grabando", speechPct)
+                        BatteryLog.append(this, "recording", speechPct)
                     }
                 }
             }
             reason = stopReason ?: StopReason.ERROR
         } catch (e: Exception) {
-            AppLog.e(TAG, "Fallo durante la grabación", e)
+            AppLog.e(TAG, "Failure while recording", e)
         } finally {
             runCatching { recorder?.stop() }
             recorder?.release()
             runCatching {
                 gate.flush().forEach { fragmenter?.onEvent(it) }
                 fragmenter?.finish()
-            }.onFailure { AppLog.e(TAG, "Fallo al cerrar el último fragmento", it) }
+            }.onFailure { AppLog.e(TAG, "Failed to close the last fragment", it) }
             store.endSession(meta.sessionId, System.currentTimeMillis(), fragmenter?.fragmentCount ?: 0)
             UploadWorker.kick(this)
             val speechPct = if (gate.totalFrames > 0) gate.speechFrames * 100 / gate.totalFrames else 0
-            AppLog.i(TAG, "Sesión ${meta.sessionId.take(8)} cerrada: ${fragmenter?.fragmentCount ?: 0} fragmentos, " +
-                "${gate.totalFrames / FRAMES_PER_SECOND} s escuchados, voz $speechPct %")
+            AppLog.i(TAG, "Session ${meta.sessionId.take(8)} closed: ${fragmenter?.fragmentCount ?: 0} fragments, " +
+                "${gate.totalFrames / FRAMES_PER_SECOND} s listened, speech $speechPct %")
         }
         val finalReason = reason
         main.post { onCaptureEnded(finalReason) }
@@ -310,7 +311,7 @@ class RecorderService : Service() {
         worker = null
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
-        BatteryLog.append(this, "fin-${reason.name.lowercase()}", RecordingState.live.value.speechPct)
+        BatteryLog.append(this, "end-${reason.name.lowercase()}", RecordingState.live.value.speechPct)
         when (reason) {
             StopReason.USER -> finishService()
             StopReason.SCHEDULE -> enterPause()
@@ -318,15 +319,15 @@ class RecorderService : Service() {
                 pendingSwitch?.let(profiles::select)
                 pendingSwitch = null
                 applyProfile()
-                AppLog.i(TAG, "Nueva sesión con el perfil «${profile?.name}»")
+                AppLog.i(TAG, "New session with the profile \"${profile?.name}\"")
                 captureOrPause()
             }
             StopReason.ERROR -> {
-                RecorderNotifications.showInterrupted(this, "Falló el micrófono")
+                RecorderNotifications.showInterrupted(this, R.string.interrupted_mic)
                 finishService()
             }
             StopReason.STORAGE -> {
-                RecorderNotifications.showInterrupted(this, "El reloj no tiene espacio")
+                RecorderNotifications.showInterrupted(this, R.string.interrupted_storage)
                 finishService()
             }
         }
@@ -336,14 +337,14 @@ class RecorderService : Service() {
         val next = window.nextChange(LocalDateTime.now())
         val label = when {
             next == null -> "—"
-            next.toLocalDate() == LocalDateTime.now().toLocalDate() -> "a las " + next.format(DateTimeFormatter.ofPattern("HH:mm"))
-            else -> "mañana a las " + next.format(DateTimeFormatter.ofPattern("HH:mm"))
+            next.toLocalDate() == LocalDateTime.now().toLocalDate() -> getString(R.string.pause_at, next.format(DateTimeFormatter.ofPattern("HH:mm")))
+            else -> getString(R.string.pause_tomorrow_at, next.format(DateTimeFormatter.ofPattern("HH:mm")))
         }
         if (next != null) scheduleWindowAlarm(next.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli())
         RecordingState.update { RecordingState.Live(origin = origin, mode = mode, pausedUntil = label, profileName = profile?.name, profileColor = profile?.color) }
         RecordingState.setPhase(this, RecordingState.Phase.PAUSED)
-        RecorderNotifications.update(this, RecorderNotifications.ongoing(this, "Escriba en pausa", "Fuera del horario; vuelve $label", null))
-        AppLog.i(TAG, "En pausa hasta $label (horario $window)")
+        RecorderNotifications.update(this, RecorderNotifications.ongoing(this, getString(R.string.notif_paused), getString(R.string.notif_paused_text, label), null))
+        AppLog.i(TAG, "Paused until $label (schedule $window)")
     }
 
     private fun finishService() {
@@ -361,7 +362,7 @@ class RecorderService : Service() {
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )
 
-    /** Alarma inexacta: en reposo profundo puede retrasarse unos minutos, que basta para un horario. */
+    /** Inexact alarm: in deep idle it may be a few minutes late, which is enough for a schedule. */
     private fun scheduleWindowAlarm(atMs: Long) {
         getSystemService(AlarmManager::class.java).setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, atMs, windowAlarmIntent())
     }
@@ -373,20 +374,20 @@ class RecorderService : Service() {
     @SuppressLint("MissingPermission")
     private fun openRecorder(preferred: MicSource): AudioRecord {
         val minBuffer = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
-        val bufferBytes = maxOf(minBuffer, SAMPLE_RATE * 2 / 2) // al menos 0,5 s de margen
+        val bufferBytes = maxOf(minBuffer, SAMPLE_RATE * 2 / 2) // at least 0.5 s of headroom
         val sources = listOf(preferred) + MicSource.entries.filter { it != preferred }
         for (source in sources) {
             val recorder = AudioRecord(source.audioSource, SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufferBytes)
             if (recorder.state == AudioRecord.STATE_INITIALIZED) return recorder
             recorder.release()
-            AppLog.i(TAG, "Fuente ${source.label} no disponible, probando otra")
+            AppLog.i(TAG, "Source ${source.name.lowercase()} not available, trying another")
         }
-        error("No se pudo inicializar AudioRecord")
+        error("Couldn't initialize AudioRecord")
     }
 
     override fun onDestroy() {
-        // Si el sistema destruye el servicio, el hilo cierra el fragmento abierto. La intención
-        // de grabar se conserva para avisar al usuario cuando el proceso vuelva.
+        // If the system destroys the service, the thread closes the open fragment. The intent to
+        // record is kept so the user is told when the process comes back.
         if (worker != null) stopReason = StopReason.ERROR
         wakeLock?.let { if (it.isHeld) it.release() }
         super.onDestroy()
@@ -401,9 +402,9 @@ class RecorderService : Service() {
         const val ACTION_TOGGLE = "dev.escriba.action.TOGGLE"
         const val ACTION_RESUME = "dev.escriba.action.RESUME"
         const val ACTION_SWITCH = "dev.escriba.action.SWITCH"
-        const val EXTRA_ORIGIN = "origen"
-        const val EXTRA_PROFILE = "perfil"
-        const val PROFILE_NEXT = "_siguiente"
+        const val EXTRA_ORIGIN = "origin"
+        const val EXTRA_PROFILE = "profile"
+        const val PROFILE_NEXT = "_next"
 
         const val SAMPLE_RATE = 16_000
         const val BITRATE = 24_000
@@ -411,7 +412,7 @@ class RecorderService : Service() {
         private const val BATTERY_LOG_EVERY_S = 300L
         private const val WAKELOCK_TIMEOUT_MS = 20 * 60 * 60_000L
         private const val MAX_STORAGE_BYTES = 1_500L * 1024 * 1024
-        /** Dos alternancias más juntas que esto se consideran una sola pulsación duplicada. */
+        /** Two toggles closer than this count as a single duplicated press. */
         private const val TOGGLE_DEBOUNCE_MS = 1_500L
 
         fun intent(context: Context, action: String, origin: String): Intent =
@@ -421,18 +422,18 @@ class RecorderService : Service() {
             intent(context, ACTION_SWITCH, origin).putExtra(EXTRA_PROFILE, profileId)
 
         /**
-         * Envía una orden al servicio con la llamada adecuada:
-         *  - parado: `startForegroundService`, porque la orden lo arranca y el servicio llamará a
-         *    `startForeground` (solo una orden que empiece a grabar tiene sentido);
-         *  - grabando o en pausa: `startService`. El servicio ya está en primer plano, y si se le
-         *    manda `startForegroundService` para pararlo, Android exige un `startForeground` que
-         *    nunca llega y mata la app (error visto en la fase 5 al parar desde el Tile).
+         * Sends a command to the service with the right call:
+         *  - stopped: `startForegroundService`, because the command starts it and the service will
+         *    call `startForeground` (only a command that starts recording makes sense);
+         *  - recording or paused: `startService`. The service is already in the foreground, and if
+         *    it's sent `startForegroundService` to stop it, Android demands a `startForeground`
+         *    that never comes and kills the app (seen when stopping from the Tile).
          */
         fun send(context: Context, intent: Intent) {
             val running = RecordingState.phase.value != RecordingState.Phase.IDLE
             when {
                 running -> context.startService(intent)
-                intent.action == ACTION_STOP -> AppLog.i(TAG, "Orden de parar sin grabación en curso; se ignora")
+                intent.action == ACTION_STOP -> AppLog.i(TAG, "Stop command with no recording in progress; ignored")
                 else -> context.startForegroundService(intent)
             }
         }

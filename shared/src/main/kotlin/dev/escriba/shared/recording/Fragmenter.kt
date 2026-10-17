@@ -3,20 +3,20 @@ package dev.escriba.shared.recording
 import dev.escriba.shared.Segment
 import dev.escriba.shared.audio.SpeechGate
 
-/** Destino de un fragmento abierto: lo implementa el reloj con Opus + Ogg sobre un archivo. */
+/** Where an open fragment goes: the watch implements it with Opus + Ogg on a file. */
 interface FragmentWriter {
     fun write(samples: ShortArray)
 
-    /** Apunta en el diario un evento de segmento, para poder recuperar el fragmento si se muere el proceso. */
+    /** Writes a segment event to the journal, so the fragment can be recovered if the process dies. */
     fun journal(line: String)
 
     fun close()
 
-    /** El fragmento no llegó a tener voz: se borra sin dejar rastro. */
+    /** The fragment never got any speech: it's deleted without a trace. */
     fun discard()
 }
 
-/** Fragmento cerrado, todavía sin tamaño ni hash (eso lo calcula quien guarda el archivo). */
+/** Closed fragment, still without size or hash (whoever stores the file computes those). */
 data class ClosedFragment(
     val seq: Int,
     val startMs: Long,
@@ -26,17 +26,16 @@ data class ClosedFragment(
 )
 
 /**
- * Convierte los eventos del VAD en fragmentos independientes.
+ * Turns VAD events into independent fragments.
  *
- * Un fragmento se cierra cuando:
- *  - acumula [maxSpeechMs] de audio (60 s por defecto), aunque se esté en mitad de una frase:
- *    el segmento continúa en el siguiente fragmento;
- *  - lleva [closeAfterSilenceMs] en silencio después de su último tramo de voz, para que el
- *    audio no espere en el reloj a que vuelva a hablar alguien;
- *  - termina la sesión ([finish]).
+ * A fragment closes when:
+ *  - it holds [maxSpeechMs] of audio (60 s by default), even mid-sentence: the segment
+ *    continues in the next fragment;
+ *  - it has been silent for [closeAfterSilenceMs] after its last stretch of speech, so the audio
+ *    doesn't wait on the watch until someone speaks again;
+ *  - the session ends ([finish]).
  *
- * Las posiciones llegan en muestras desde el inicio de la captura; [wallClockAt] las traduce
- * a hora real.
+ * Positions arrive in samples since capture started; [wallClockAt] maps them to real time.
  */
 class Fragmenter(
     private val sampleRate: Int,
@@ -53,13 +52,13 @@ class Fragmenter(
     private class Open(val seq: Int, val writer: FragmentWriter) {
         val segments = ArrayList<Segment>()
         var audioSamples = 0L
-        /** Inicio (en audio y en hora real) del segmento abierto, si lo hay. */
+        /** Start (in audio and in real time) of the open segment, if any. */
         var segmentAudioStart: Long? = null
         var segmentWallStart = 0L
         var silenceSince: Long? = null
     }
 
-    /** Fragmentos creados en la sesión (el abierto incluido). */
+    /** Fragments created in the session (including the open one). */
     val fragmentCount: Int get() = nextSeq
     val hasOpenFragment: Boolean get() = current != null
 
@@ -79,7 +78,7 @@ class Fragmenter(
                     val nextSample = event.startSample + event.samples.size
                     endSegment(fragment)
                     close(last = false)
-                    // La frase sigue: el siguiente fragmento empieza justo donde acabó este.
+                    // The sentence goes on: the next fragment starts right where this one ended.
                     fragment = open()
                     startSegment(fragment, nextSample)
                 }
@@ -92,14 +91,14 @@ class Fragmenter(
         }
     }
 
-    /** Se llama en cada trama (también en silencio) para aplicar el cierre por inactividad. */
+    /** Called on every frame (silent ones too) to apply the close-after-silence rule. */
     fun onTick(sample: Long) {
         val fragment = current ?: return
         val since = fragment.silenceSince ?: return
         if ((sample - since) * 1000 / sampleRate >= closeAfterSilenceMs) close(last = false)
     }
 
-    /** Cierra la sesión, y con ella el segmento que siga abierto. */
+    /** Ends the session, and with it any segment still open. */
     fun finish() {
         val fragment = current ?: return
         endSegment(fragment)
@@ -136,7 +135,7 @@ class Fragmenter(
         val segments = fragment.segments.filter { it.durationMs > 0 }
         if (segments.isEmpty()) {
             fragment.writer.discard()
-            nextSeq = fragment.seq // sin huecos en la numeración
+            nextSeq = fragment.seq // no gaps in the numbering
             return
         }
         fragment.writer.close()

@@ -3,6 +3,7 @@ package dev.escriba.shared.vault
 import dev.escriba.shared.Segment
 import dev.escriba.shared.audio.OggOpusWriter
 import dev.escriba.shared.audio.OggReader
+import dev.escriba.shared.transcription.TranscriptLine
 import java.io.ByteArrayOutputStream
 import java.time.Instant
 import java.time.ZoneId
@@ -10,10 +11,10 @@ import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import kotlin.random.Random
 
-/** Fragmento recibido, con lo necesario para agrupar y escribir notas. */
+/** A received fragment, with what's needed to group it and write notes. */
 data class FragmentInfo(val seq: Int, val startMs: Long, val endMs: Long, val segments: List<Segment>)
 
-/** Una conversación: fragmentos consecutivos sin silencios largos entre ellos. */
+/** A conversation: consecutive fragments without long silences between them. */
 data class Conversation(
     val index: Int,
     val fragments: List<FragmentInfo>,
@@ -26,9 +27,9 @@ data class Conversation(
 
 object Conversations {
     /**
-     * Parte una sesión en conversaciones donde hay un silencio de al menos [splitAfterMin].
-     * Se corta entre fragmentos: un fragmento se cierra tras 30 s de silencio, así que un hueco
-     * de minutos siempre cae entre dos.
+     * Splits a session into conversations wherever there's a silence of at least [splitAfterMin].
+     * The cut falls between fragments: a fragment closes after 30 s of silence, so a gap of
+     * minutes always lands between two.
      */
     fun split(fragments: List<FragmentInfo>, splitAfterMin: Int): List<Conversation> {
         val sorted = fragments.sortedBy { it.seq }
@@ -43,8 +44,8 @@ object Conversations {
     }
 
     /**
-     * Duración redondeada al múltiplo de [roundingMin] más cercano (por defecto, al minuto). Nunca
-     * menos de un paso: una conversación de 20 s cuenta como 1 min, no como 0.
+     * Duration rounded to the nearest multiple of [roundingMin] (by default, to the minute). Never
+     * less than one step: a 20 s conversation counts as 1 min, not 0.
      */
     fun roundedMinutes(durationMs: Long, roundingMin: Int = 1): Int {
         val step = roundingMin.coerceAtLeast(1)
@@ -53,48 +54,53 @@ object Conversations {
     }
 }
 
-/** Todo lo que necesita una nota. En la fase 4 el texto es provisional; en las fases 6–7 llega la IA. */
+/** Everything a note needs. Until the conversation is processed, the text is a placeholder. */
 data class NoteData(
     val sessionId: String,
     val conversation: Conversation,
     val profile: Profile,
     val zone: ZoneId,
-    val title: String = "Grabación",
-    val summary: String = "_Pendiente: el resumen llegará con la IA local (fase 7)._",
+    val title: String = NoteRenderer.UNTITLED,
+    val summary: String = "_Pending: the summary will be written once the conversation is processed._",
     val tasks: String = "",
     val transcript: String? = null,
     val participants: List<String> = emptyList(),
     val audioLink: String? = null,
-    val status: String = "pendiente",
-    /** Etiquetas extra (las del LLM); `escriba` y el perfil van siempre. */
+    val status: String = NoteRenderer.STATUS_PENDING,
+    /** Extra tags (the LLM's); `escriba` and the profile are always there. */
     val tags: List<String> = emptyList(),
-    /** Cliente detectado; el del perfil tiene prioridad. */
+    /** Detected client; the profile's client takes priority. */
     val client: String? = null,
 )
 
 object NoteRenderer {
+    const val UNTITLED = "Recording"
+    const val STATUS_PENDING = "pending"
+    const val STATUS_TRANSCRIBED = "transcribed"
+    const val STATUS_SUMMARIZED = "summarized"
+
     private val DATE = DateTimeFormatter.ofPattern("yyyy-MM-dd")
     private val TIME = DateTimeFormatter.ofPattern("HH:mm")
     private val FILE_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HHmm")
     private val FORBIDDEN = Regex("[\\\\/:*?\"<>|#^\\[\\]]")
 
     val DEFAULT_TEMPLATE = """
-        # {{titulo}}
+        # {{title}}
 
-        ## Resumen
-        {{resumen}}
+        ## Summary
+        {{summary}}
 
-        {{tareas}}
+        {{tasks}}
 
         {{audio}}
 
-        ## Transcripción
-        {{transcripcion}}
+        ## Transcript
+        {{transcript}}
     """.trimIndent() + "\n"
 
     fun at(ms: Long, zone: ZoneId): ZonedDateTime = Instant.ofEpochMilli(ms).atZone(zone)
 
-    /** Carpeta del perfil con sus marcadores de fecha resueltos. */
+    /** The profile's folder with its date placeholders filled in. */
     fun folder(pattern: String, ms: Long, zone: ZoneId): String {
         val t = at(ms, zone)
         return pattern
@@ -104,75 +110,74 @@ object NoteRenderer {
             .split('/').map(::sanitize).filter { it.isNotEmpty() }.joinToString("/")
     }
 
-    /** Nombre de archivo sin extensión, p. ej. `2026-10-16 1032 Trabajo – Revisión`. */
+    /** File name without extension, e.g. `2026-10-16 1032 Work – Quarterly review`. */
     fun baseName(data: NoteData): String {
         val start = at(data.conversation.startMs, data.zone).format(FILE_TIME)
-        val title = data.title.takeIf { it.isNotBlank() && it != "Grabación" }?.let { " – $it" } ?: ""
+        val title = data.title.takeIf { it.isNotBlank() && it != UNTITLED }?.let { " – $it" } ?: ""
         return sanitize("$start ${data.profile.name}$title").take(120).trim()
     }
 
     fun sanitize(name: String): String = name.replace(FORBIDDEN, " ").replace(Regex("\\s+"), " ").trim().trim('.')
 
-    /** Frontmatter compatible con Dataview: es lo que permite listar las grabaciones en la nota diaria. */
+    /** Dataview-friendly frontmatter: it's what lets the daily note list the recordings. */
     fun properties(data: NoteData): LinkedHashMap<String, YamlValue> {
         val c = data.conversation
         val start = at(c.startMs, data.zone)
         val end = at(c.endMs, data.zone)
         return linkedMapOf<String, YamlValue>().apply {
-            put("tipo", YamlValue.Text("grabacion"))
-            put("fecha", YamlValue.Text(start.format(DATE)))
-            put("inicio", YamlValue.Text(start.format(TIME)))
-            put("fin", YamlValue.Text(end.format(TIME)))
-            put("duracion_min", YamlValue.Number(Conversations.roundedMinutes(c.endMs - c.startMs, data.profile.roundingMin).toDouble()))
-            put("duracion_habla_min", YamlValue.Number(Math.ceil(c.speechMs / 60_000.0)))
-            put("perfil", YamlValue.Text(data.profile.id))
-            (data.profile.client ?: data.client)?.let { put("cliente", YamlValue.Text(it)) }
-            put("participantes", if (data.participants.isEmpty()) YamlValue.Empty else YamlValue.Items(data.participants))
-            put("etiquetas", YamlValue.Items((listOf("escriba", data.profile.id) + data.tags).distinct()))
+            put("type", YamlValue.Text("recording"))
+            put("date", YamlValue.Text(start.format(DATE)))
+            put("start", YamlValue.Text(start.format(TIME)))
+            put("end", YamlValue.Text(end.format(TIME)))
+            put("duration_min", YamlValue.Number(Conversations.roundedMinutes(c.endMs - c.startMs, data.profile.roundingMin).toDouble()))
+            put("speech_min", YamlValue.Number(Math.ceil(c.speechMs / 60_000.0)))
+            put("profile", YamlValue.Text(data.profile.id))
+            (data.profile.client ?: data.client)?.let { put("client", YamlValue.Text(it)) }
+            put("participants", if (data.participants.isEmpty()) YamlValue.Empty else YamlValue.Items(data.participants))
+            put("tags", YamlValue.Items((listOf("escriba", data.profile.id) + data.tags).distinct()))
             data.audioLink?.let { put("audio", YamlValue.Text("[[$it]]")) }
-            put("sesion", YamlValue.Text(data.sessionId))
-            put("conversacion", YamlValue.Number(c.index.toDouble()))
-            put("estado", YamlValue.Text(data.status))
+            put("session", YamlValue.Text(data.sessionId))
+            put("conversation", YamlValue.Number(c.index.toDouble()))
+            put("status", YamlValue.Text(data.status))
             put("escriba", YamlValue.Number(1.0))
         }
     }
 
     fun render(data: NoteData, template: String?): String {
         val vars = mapOf(
-            "titulo" to data.title,
-            "resumen" to data.summary,
-            "tareas" to if (data.tasks.isBlank()) "" else "## Tareas\n${data.tasks}",
+            "title" to data.title,
+            "summary" to data.summary,
+            "tasks" to if (data.tasks.isBlank()) "" else "## Tasks\n${data.tasks}",
             "audio" to (data.audioLink?.let { "## Audio\n![[$it]]" } ?: ""),
-            "transcripcion" to (data.transcript ?: placeholderTranscript(data)),
-            "fecha" to at(data.conversation.startMs, data.zone).format(DATE),
-            "inicio" to at(data.conversation.startMs, data.zone).format(TIME),
-            "fin" to at(data.conversation.endMs, data.zone).format(TIME),
-            "perfil" to data.profile.name,
-            "cliente" to (data.profile.client ?: data.client ?: "—"),
-            "participantes" to data.participants.joinToString(", ").ifEmpty { "—" },
-            "duracion" to Conversations.roundedMinutes(data.conversation.endMs - data.conversation.startMs, data.profile.roundingMin).toString(),
+            "transcript" to (data.transcript ?: placeholderTranscript(data)),
+            "date" to at(data.conversation.startMs, data.zone).format(DATE),
+            "start" to at(data.conversation.startMs, data.zone).format(TIME),
+            "end" to at(data.conversation.endMs, data.zone).format(TIME),
+            "profile" to data.profile.name,
+            "client" to (data.profile.client ?: data.client ?: "—"),
+            "participants" to data.participants.joinToString(", ").ifEmpty { "—" },
+            "duration" to Conversations.roundedMinutes(data.conversation.endMs - data.conversation.startMs, data.profile.roundingMin).toString(),
         )
         var body = template?.takeIf { it.isNotBlank() } ?: DEFAULT_TEMPLATE
         for ((k, v) in vars) body = body.replace("{{$k}}", v)
-        // Las variables vacías dejan huecos: como mucho una línea en blanco seguida.
+        // Empty variables leave gaps: at most one blank line in a row.
         body = body.replace(Regex("\n{3,}"), "\n\n")
         return Frontmatter.note(properties(data), body)
     }
 
     /**
-     * Transcripción en párrafos: Whisper corta en cada pausa pequeña («el», «del reloj» sueltos),
-     * así que las frases seguidas se unen y solo se pone la hora al principio de cada párrafo.
-     * Un párrafo nuevo empieza tras una pausa de [pauseMs], al cambiar de hablante o al pasar
-     * de [maxChars] caracteres.
+     * Transcript in paragraphs: Whisper cuts at every small pause (lone "the", "of the watch"), so
+     * consecutive sentences are joined and the time goes only at the start of each paragraph. A new
+     * paragraph starts after a pause of [pauseMs], when the speaker changes or past [maxChars].
      */
     fun transcript(
-        lines: List<dev.escriba.shared.transcription.TranscriptLine>,
+        lines: List<TranscriptLine>,
         zone: ZoneId,
         pauseMs: Long = 4_000,
         maxChars: Int = 400,
     ): String {
         val time = DateTimeFormatter.ofPattern("HH:mm:ss")
-        val paragraphs = ArrayList<Pair<dev.escriba.shared.transcription.TranscriptLine, StringBuilder>>()
+        val paragraphs = ArrayList<Pair<TranscriptLine, StringBuilder>>()
         var lastEnd = Long.MIN_VALUE
         for (l in lines) {
             val current = paragraphs.lastOrNull()
@@ -189,24 +194,24 @@ object NoteRenderer {
         }
     }
 
-    /** Mientras no hay transcripción: los tramos de voz con su hora real. */
+    /** Until there's a transcript: the stretches of speech with their real time. */
     private fun placeholderTranscript(data: NoteData): String =
         data.conversation.segments.joinToString("\n") { s ->
             val t = at(s.wallStartMs, data.zone).format(TIME)
-            "- **$t** · ${(s.durationMs + 999) / 1000} s de voz _(transcripción pendiente)_"
+            "- **$t** · ${(s.durationMs + 999) / 1000} s of speech _(transcript pending)_"
         }
 }
 
-/** Enlace a la grabación en la nota diaria (modo `nota_diaria: enlace`). */
+/** Link to the recording in the daily note (`daily_note: link` mode). */
 object DailyNote {
-    const val SECTION = "## Grabaciones"
+    const val SECTION = "## Recordings"
 
-    /** Consulta Dataview para la plantilla de la nota diaria (modo por defecto). */
+    /** Dataview query for the daily note template (the default mode). */
     val DATAVIEW_QUERY = """
         ```dataview
-        TABLE WITHOUT ID file.link AS "Grabación", inicio AS "Hora", duracion_min AS "Min", perfil AS "Perfil"
-        WHERE tipo = "grabacion" AND fecha = this.file.day
-        SORT inicio ASC
+        TABLE WITHOUT ID file.link AS "Recording", start AS "Time", duration_min AS "Min", profile AS "Profile"
+        WHERE type = "recording" AND date = this.file.day
+        SORT start ASC
         ```
     """.trimIndent()
 
@@ -216,7 +221,7 @@ object DailyNote {
         else "%04d-%02d-%02d".format(t.year, t.monthValue, t.dayOfMonth)
     }
 
-    /** Añade `- [[enlace]]` bajo la sección de grabaciones, sin duplicar y sin tocar el resto. */
+    /** Adds `- [[link]]` under the recordings section, without duplicates and without touching the rest. */
     fun addLink(existing: String?, link: String, title: String): String {
         val entry = "- [[$link]]"
         if (existing == null) return "# $title\n\n$SECTION\n$entry\n"
@@ -231,7 +236,7 @@ object DailyNote {
     }
 }
 
-/** Une los fragmentos de una conversación en un único Ogg/Opus para la bóveda. */
+/** Joins a conversation's fragments into a single Ogg/Opus file for the vault. */
 object OggConcat {
     fun concat(fragments: List<ByteArray>): ByteArray {
         val readers = fragments.map(OggReader::read)

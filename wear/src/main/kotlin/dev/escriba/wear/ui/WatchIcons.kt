@@ -8,7 +8,7 @@ import androidx.compose.ui.graphics.vector.PathBuilder
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 
-/** Iconos del reloj, dibujados sobre una cuadrícula de 24 (sin la librería de iconos: pesa mucho). */
+/** Watch icons, drawn on a 24-unit grid (without the icon library: it's heavy). */
 object WatchIcons {
 
     private fun icon(name: String, block: PathBuilder.() -> Unit): ImageVector =
@@ -40,7 +40,7 @@ object WatchIcons {
         }
     }
 
-    /** Cuadrado redondeado: parar. */
+    /** Rounded square: stop. */
     val Stop: ImageVector by lazy {
         icon("Stop") {
             moveTo(8f, 6f); horizontalLineTo(16f)
@@ -52,7 +52,7 @@ object WatchIcons {
         }
     }
 
-    /** Móvil. */
+    /** Phone. */
     val Phone: ImageVector by lazy {
         icon("Phone") {
             moveTo(8f, 2f); horizontalLineTo(16f)
@@ -65,7 +65,7 @@ object WatchIcons {
         }
     }
 
-    /** Tres barras deslizantes: ajustes. */
+    /** Three sliders: settings. */
     val Tune: ImageVector by lazy {
         icon("Tune") {
             fun bar(y: Float, knob: Float) {
@@ -76,7 +76,7 @@ object WatchIcons {
         }
     }
 
-    /** Líneas de texto: diagnóstico y registro. */
+    /** Lines of text: diagnostics and log. */
     val Lines: ImageVector by lazy {
         icon("Lines") {
             moveTo(4f, 6f); horizontalLineTo(20f); verticalLineTo(8f); horizontalLineTo(4f); close()

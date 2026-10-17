@@ -39,7 +39,7 @@ class FragmenterTest {
         closeAfterSilenceMs = closeAfterSilenceMs,
     )
 
-    /** Simula la salida del VAD: un tramo de voz de [frames] tramas a partir de la trama [at]. */
+    /** Simulates the VAD's output: a stretch of speech of [frames] frames from frame [at]. */
     private fun Fragmenter.speech(at: Long, frames: Int) {
         onEvent(SpeechGate.Event.SpeechStarted(at * frame))
         for (i in 0 until frames) {
@@ -54,11 +54,11 @@ class FragmenterTest {
     }
 
     @Test
-    fun `dos frases cercanas van al mismo fragmento con su hora real`() {
+    fun `two nearby sentences go to the same fragment with their real time`() {
         val f = fragmenter()
-        f.speech(at = 100, frames = 150) // 2 s a los 2 s
-        f.silence(from = 250, frames = 250) // 5 s de silencio
-        f.speech(at = 500, frames = 100) // 2 s a los 10 s
+        f.speech(at = 100, frames = 150) // 3 s at 2 s
+        f.silence(from = 250, frames = 250) // 5 s of silence
+        f.speech(at = 500, frames = 100) // 2 s at 10 s
         f.finish()
 
         assertEquals(1, closed.size)
@@ -74,7 +74,7 @@ class FragmenterTest {
     }
 
     @Test
-    fun `un silencio largo cierra el fragmento y la siguiente frase abre otro`() {
+    fun `a long silence closes the fragment and the next sentence opens another`() {
         val f = fragmenter(closeAfterSilenceMs = 30_000)
         f.speech(at = 0, frames = 100)
         f.silence(from = 100, frames = 1_600) // 32 s
@@ -87,14 +87,14 @@ class FragmenterTest {
     }
 
     @Test
-    fun `una frase larga se parte en fragmentos de 60 s sin perder audio`() {
+    fun `a long sentence is split into 60 s fragments without losing audio`() {
         val f = fragmenter(maxSpeechMs = 60_000)
-        f.speech(at = 0, frames = 7_500) // 150 s seguidos
+        f.speech(at = 0, frames = 7_500) // 150 s in a row
         f.finish()
 
         assertEquals(listOf(0, 1, 2), closed.map { it.seq })
         assertEquals(listOf(60_000L, 60_000L, 30_000L), closed.map { it.segments.single().durationMs })
-        // Los fragmentos se encadenan en la hora real sin huecos.
+        // The fragments chain in real time without gaps.
         assertEquals(t0, closed[0].startMs)
         assertEquals(closed[0].endMs, closed[1].startMs)
         assertEquals(closed[1].endMs, closed[2].startMs)
@@ -103,7 +103,7 @@ class FragmenterTest {
     }
 
     @Test
-    fun `finish sin voz no deja fragmentos ni huecos de numeracion`() {
+    fun `finish without speech leaves no fragments or numbering gaps`() {
         val f = fragmenter()
         f.silence(from = 0, frames = 100)
         f.finish()
@@ -112,7 +112,7 @@ class FragmenterTest {
     }
 
     @Test
-    fun `finish en mitad de una frase cierra el segmento`() {
+    fun `finish mid-sentence closes the segment`() {
         val f = fragmenter()
         f.onEvent(SpeechGate.Event.SpeechStarted(0))
         repeat(100) { f.onEvent(SpeechGate.Event.Audio(ShortArray(frame), it.toLong() * frame)) }
@@ -124,7 +124,7 @@ class FragmenterTest {
 class FragmentJournalTest {
 
     @Test
-    fun `reconstruye segmentos cerrados y el abierto`() {
+    fun `rebuilds closed segments and the open one`() {
         val lines = listOf("S 0 1000", "E 3000", "S 3000 9000")
         assertEquals(
             listOf(Segment(0, 1000, 3000), Segment(3000, 9000, 4500)),
@@ -133,9 +133,9 @@ class FragmentJournalTest {
     }
 
     @Test
-    fun `recorta lo que se perdio al final del Ogg`() {
+    fun `trims what was lost at the end of the Ogg`() {
         val lines = listOf("S 0 1000", "E 3000", "S 3000 9000", "E 2000")
-        // Solo se salvaron 3,5 s: el segundo segmento queda en 0,5 s.
+        // Only 3.5 s were saved: the second segment is left with 0.5 s.
         assertEquals(
             listOf(Segment(0, 1000, 3000), Segment(3000, 9000, 500)),
             FragmentJournal.recover(lines, audioDurationMs = 3_500),
@@ -143,8 +143,8 @@ class FragmentJournalTest {
     }
 
     @Test
-    fun `ignora lineas corruptas`() {
-        val lines = listOf("S 0 1000", "basura", "E", "E 10", "S x y")
+    fun `ignores corrupt lines`() {
+        val lines = listOf("S 0 1000", "garbage", "E", "E 10", "S x y")
         assertEquals(listOf(Segment(0, 1000, 10)), FragmentJournal.recover(lines, audioDurationMs = 5_000))
     }
 }
@@ -155,7 +155,7 @@ class ScheduleTest {
     private val night = DailyWindow(LocalTime.of(22, 0), LocalTime.of(6, 0))
 
     @Test
-    fun `franja diurna`() {
+    fun `daytime window`() {
         assertTrue(day.contains(LocalTime.of(7, 30)))
         assertTrue(day.contains(LocalTime.of(23, 29)))
         assertFalse(day.contains(LocalTime.of(23, 30)))
@@ -163,25 +163,25 @@ class ScheduleTest {
     }
 
     @Test
-    fun `franja que cruza la medianoche`() {
+    fun `window crossing midnight`() {
         assertTrue(night.contains(LocalTime.of(23, 0)))
         assertTrue(night.contains(LocalTime.of(5, 59)))
         assertFalse(night.contains(LocalTime.of(12, 0)))
     }
 
     @Test
-    fun `proximo cambio`() {
+    fun `next change`() {
         val d = LocalDateTime.of(2026, 10, 16, 0, 0)
         assertEquals(d.withHour(23).withMinute(30), day.nextChange(d.withHour(12)))
         assertEquals(d.plusDays(1).withHour(7).withMinute(30), day.nextChange(d.withHour(23).withMinute(45)))
         assertEquals(d.withHour(7).withMinute(30), day.nextChange(d.withHour(1)))
-        // En el instante exacto del límite, el cambio siguiente es el otro extremo.
+        // At the exact boundary instant, the next change is the other end.
         assertEquals(d.withHour(23).withMinute(30), day.nextChange(d.withHour(7).withMinute(30)))
         assertEquals(d.plusDays(1).withHour(6), night.nextChange(d.withHour(22)))
     }
 
     @Test
-    fun `todo el dia y lectura de texto`() {
+    fun `all day and parsing text`() {
         val all = DailyWindow(LocalTime.MIDNIGHT, LocalTime.MIDNIGHT)
         assertTrue(all.contains(LocalTime.of(3, 0)))
         assertNull(all.nextChange(LocalDateTime.now()))

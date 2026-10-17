@@ -9,18 +9,18 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 
 /**
- * Los pocos iconos que no trae `material-icons-core`, dibujados aquí sobre una cuadrícula de 24
- * con el mismo trazo redondeado que Material Symbols Rounded.
+ * The few icons `material-icons-core` doesn't have, drawn here on a 24-unit grid with the same
+ * rounded stroke as Material Symbols Rounded.
  */
 object EscribaIcons {
 
     private fun icon(name: String, block: PathBuilder.() -> Unit): ImageVector =
         ImageVector.Builder(name, 24.dp, 24.dp, 24f, 24f).apply {
-            // Par-impar: un círculo dentro de otro deja un aro, sin cuidar el sentido del trazo.
+            // Even-odd: a circle inside another leaves a ring, regardless of the path direction.
             path(fill = SolidColor(Color.Black), pathFillType = PathFillType.EvenOdd, pathBuilder = block)
         }.build()
 
-    /** Círculo como dos semicírculos. */
+    /** A circle as two semicircles. */
     private fun PathBuilder.circle(cx: Float, cy: Float, r: Float) {
         moveTo(cx, cy - r)
         arcTo(r, r, 0f, false, true, cx, cy + r)
@@ -28,10 +28,10 @@ object EscribaIcons {
         close()
     }
 
-    /** Micrófono. */
+    /** Microphone. */
     val Mic: ImageVector by lazy {
         icon("Mic") {
-            // Cápsula de 6 × 12 centrada.
+            // Centred 6 × 12 capsule.
             moveTo(12f, 3f)
             curveTo(10.34f, 3f, 9f, 4.34f, 9f, 6f)
             verticalLineTo(12f)
@@ -40,7 +40,7 @@ object EscribaIcons {
             verticalLineTo(6f)
             curveTo(15f, 4.34f, 13.66f, 3f, 12f, 3f)
             close()
-            // Arco del soporte y pie.
+            // Stand arc and foot.
             moveTo(5.5f, 11f)
             horizontalLineTo(7.5f)
             curveTo(7.5f, 13.49f, 9.51f, 15.5f, 12f, 15.5f)
@@ -55,7 +55,7 @@ object EscribaIcons {
         }
     }
 
-    /** Dos barras de pausa. */
+    /** Two pause bars. */
     val Pause: ImageVector by lazy {
         icon("Pause") {
             moveTo(7f, 5f); horizontalLineTo(10.5f); verticalLineTo(19f); horizontalLineTo(7f); close()
@@ -63,7 +63,7 @@ object EscribaIcons {
         }
     }
 
-    /** Esfera de reloj con agujas: «en espera». */
+    /** Clock face with hands: "waiting". */
     val Schedule: ImageVector by lazy {
         icon("Schedule") {
             circle(12f, 12f, 9.5f)
@@ -72,7 +72,7 @@ object EscribaIcons {
         }
     }
 
-    /** Reloj de pulsera: la pestaña y los ajustes del reloj. */
+    /** Wristwatch: the watch tab and settings. */
     val Watch: ImageVector by lazy {
         icon("Watch") {
             moveTo(9f, 2f); horizontalLineTo(15f); lineTo(15.6f, 5.2f)
@@ -85,7 +85,7 @@ object EscribaIcons {
         }
     }
 
-    /** Onda de voz: modelos y transcripción. */
+    /** Voice wave: models and transcription. */
     val Waveform: ImageVector by lazy {
         icon("Waveform") {
             fun bar(x: Float, h: Float) {
@@ -95,7 +95,7 @@ object EscribaIcons {
         }
     }
 
-    /** Tres barras de distinta altura: el panel. */
+    /** Three bars of different heights: the dashboard. */
     val Chart: ImageVector by lazy {
         icon("Chart") {
             moveTo(4f, 12f); horizontalLineTo(8f); verticalLineTo(20f); horizontalLineTo(4f); close()
@@ -104,18 +104,18 @@ object EscribaIcons {
         }
     }
 
-    /** Media luna: apariencia. */
+    /** Half moon: appearance. */
     val Contrast: ImageVector by lazy {
         icon("Contrast") {
             circle(12f, 12f, 9.5f)
-            // La mitad izquierda, hueca: queda la derecha rellena.
+            // The left half, hollow: the right one stays filled.
             moveTo(12f, 4.5f)
             arcTo(7.5f, 7.5f, 0f, false, false, 12f, 19.5f)
             close()
         }
     }
 
-    /** Pila: optimización de batería. */
+    /** Battery: battery optimization. */
     val Battery: ImageVector by lazy {
         icon("Battery") {
             moveTo(9f, 2f); horizontalLineTo(15f); verticalLineTo(4f); horizontalLineTo(17f); verticalLineTo(22f); horizontalLineTo(7f); verticalLineTo(4f); horizontalLineTo(9f); close()
@@ -124,7 +124,7 @@ object EscribaIcons {
         }
     }
 
-    /** Líneas de texto: registro. */
+    /** Lines of text: log. */
     val Notes: ImageVector by lazy {
         icon("Notes") {
             moveTo(4f, 6f); horizontalLineTo(20f); verticalLineTo(8f); horizontalLineTo(4f); close()
@@ -133,7 +133,7 @@ object EscribaIcons {
         }
     }
 
-    /** Dos personas: voces. */
+    /** Two people: voices. */
     val People: ImageVector by lazy {
         icon("People") {
             circle(9f, 7.5f, 3.5f)

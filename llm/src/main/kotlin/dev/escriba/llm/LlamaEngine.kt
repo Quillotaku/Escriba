@@ -2,7 +2,7 @@ package dev.escriba.llm
 
 import java.io.Closeable
 
-/** Llamadas JNI a llama.cpp (llama_jni.cpp). */
+/** JNI calls into llama.cpp (llama_jni.cpp). */
 internal object LlamaNative {
     init {
         System.loadLibrary("escriba_llm")
@@ -19,15 +19,15 @@ internal object LlamaNative {
     external fun nativeGenerate(handle: Long, system: String, user: String, grammar: String?, maxTokens: Int, temperature: Float): String?
 }
 
-/** Estadísticas de una generación: velocidades de lectura del prompt y de escritura. */
+/** Statistics of one generation: prompt reading and writing speeds. */
 data class LlamaStats(val promptTokens: Int, val generatedTokens: Int, val promptMs: Double, val generateMs: Double, val truncated: Boolean) {
     val promptTokensPerSecond: Double get() = if (promptMs > 0) promptTokens * 1000 / promptMs else 0.0
     val generateTokensPerSecond: Double get() = if (generateMs > 0) generatedTokens * 1000 / generateMs else 0.0
 }
 
 /**
- * Un LLM cargado. Pesa varios GB: se carga para una tanda de trabajo y se libera al terminar, y
- * nunca está cargado a la vez que Whisper. No es seguro usarlo desde varios hilos a la vez.
+ * A loaded LLM. It weighs several GB: it's loaded for a batch of work and released when done, and
+ * never loaded at the same time as Whisper. Not safe to use from several threads at once.
  */
 class LlamaEngine private constructor(private var handle: Long, val modelName: String) : Closeable {
 
@@ -36,13 +36,13 @@ class LlamaEngine private constructor(private var handle: Long, val modelName: S
     fun countTokens(text: String): Int = LlamaNative.nativeCountTokens(handle, text)
 
     /**
-     * Genera la respuesta a [user] con las instrucciones de [system]. Con [grammar] (GBNF), la
-     * salida queda restringida a ella. Temperatura 0 = voraz, lo más estable para extraer datos.
+     * Generates the answer to [user] with the instructions in [system]. With [grammar] (GBNF), the
+     * output is restricted to it. Temperature 0 = greedy, the most stable for extracting data.
      */
     fun generate(system: String, user: String, grammar: String? = null, maxTokens: Int = 1024, temperature: Float = 0f): String {
-        check(handle != 0L) { "Modelo liberado" }
+        check(handle != 0L) { "Model released" }
         return LlamaNative.nativeGenerate(handle, system, user, grammar, maxTokens, temperature)
-            ?: throw IllegalStateException("llama.cpp no pudo generar: " + nativeLog().lines().lastOrNull { it.isNotBlank() }.orEmpty())
+            ?: throw IllegalStateException("llama.cpp couldn't generate: " + nativeLog().lines().lastOrNull { it.isNotBlank() }.orEmpty())
     }
 
     fun lastStats(): LlamaStats? {
@@ -59,10 +59,10 @@ class LlamaEngine private constructor(private var handle: Long, val modelName: S
     }
 
     companion object {
-        /** Carga un GGUF desde un descriptor abierto con SAF (sin ruta: no hace falta permiso de almacenamiento). */
+        /** Loads a GGUF from a descriptor opened with SAF (no path: no storage permission needed). */
         fun load(fd: Int, modelName: String, contextSize: Int = 8192, threads: Int = defaultThreads(), flashAttn: Boolean = true): LlamaEngine {
             val handle = LlamaNative.nativeLoadFd(fd, contextSize, threads, flashAttn)
-            check(handle != 0L) { "No se pudo cargar el modelo $modelName: " + nativeLog().lines().lastOrNull { it.isNotBlank() }.orEmpty() }
+            check(handle != 0L) { "Couldn't load the model $modelName: " + nativeLog().lines().lastOrNull { it.isNotBlank() }.orEmpty() }
             return LlamaEngine(handle, modelName)
         }
 

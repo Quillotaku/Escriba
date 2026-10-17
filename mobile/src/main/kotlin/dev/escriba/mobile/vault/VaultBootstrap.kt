@@ -3,188 +3,174 @@ package dev.escriba.mobile.vault
 import dev.escriba.shared.vault.DailyNote
 
 /**
- * Estructura inicial de una bóveda para Escriba. Solo crea lo que falta: nunca sobrescribe
- * algo que el usuario ya tenga.
+ * Initial vault structure for Escriba. It only creates what's missing: it never overwrites
+ * anything the user already has.
  */
 object VaultBootstrap {
 
     const val CONFIG_DIR = "_config/escriba"
-    const val PROFILES_DIR = "$CONFIG_DIR/perfiles"
-    const val TEMPLATES_DIR = "$CONFIG_DIR/plantillas"
+    const val PROFILES_DIR = "$CONFIG_DIR/profiles"
+    const val TEMPLATES_DIR = "$CONFIG_DIR/templates"
     const val CONFIG_FILE = "$CONFIG_DIR/escriba.md"
-    const val ERRORS_FILE = "$CONFIG_DIR/errores.md"
-    const val DAILY_TEMPLATE = "$TEMPLATES_DIR/diaria.md"
+    const val ERRORS_FILE = "$CONFIG_DIR/errors.md"
+    const val DAILY_TEMPLATE = "$TEMPLATES_DIR/daily.md"
 
     /**
-     * Plantilla de la nota diaria. Se monta línea a línea a propósito: con la consulta interpolada
-     * dentro de un texto sangrado, `trimIndent` no quitaba la sangría y Obsidian lo mostraba
-     * como bloque de código en vez de ejecutar Dataview (error de la primera versión).
+     * Daily note template. It's assembled line by line on purpose: with the query interpolated
+     * inside an indented text block, `trimIndent` didn't remove the indentation and Obsidian showed
+     * it as a code block instead of running Dataview.
      */
     private fun dailyTemplate(): String =
-        listOf("# {{date}}", "", "## Grabaciones", DailyNote.DATAVIEW_QUERY, "", "## Notas", "").joinToString("\n")
+        listOf("# {{date}}", "", "## Recordings", DailyNote.DATAVIEW_QUERY, "", "## Notes", "").joinToString("\n")
 
-    val folders = listOf("Diario", "Personas", "Proyectos", "Clientes", "Grabaciones", "Adjuntos/Escriba", PROFILES_DIR, TEMPLATES_DIR)
+    val folders = listOf("Daily", "People", "Projects", "Clients", "Recordings", "Attachments/Escriba", PROFILES_DIR, TEMPLATES_DIR)
 
     val files: Map<String, String> = linkedMapOf(
         CONFIG_FILE to """
             ---
             version: 1
-            horario: "07:30-23:30"
-            zona_horaria: Europe/Madrid
-            perfil_por_defecto: casual
-            whisper_por_defecto: large-v3-turbo-q8_0
-            llm_por_defecto: gemma-3-4b-it-Q4_K_M
-            nota_diaria_carpeta: Diario
-            nota_diaria_formato: YYYY-MM-DD
-            carpeta_personas: Personas
-            carpeta_proyectos: Proyectos
-            carpeta_clientes: Clientes
-            carpeta_adjuntos: Adjuntos/Escriba
-            retencion_audio_movil: 7d
+            schedule: "07:30-23:30"
+            time_zone: Europe/Madrid
+            default_profile: personal
+            default_whisper: large-v3-turbo-q8_0
+            default_llm: gemma-3-4b-it-Q4_K_M
+            daily_note_folder: Daily
+            daily_note_format: YYYY-MM-DD
+            people_folder: People
+            projects_folder: Projects
+            clients_folder: Clients
+            attachments_folder: Attachments/Escriba
+            phone_audio_retention: 7d
             ---
-            # Configuración de Escriba
+            # Escriba settings
 
-            Ajustes globales. Los perfiles están en `perfiles/` (un archivo por perfil) y las
-            plantillas de nota en `plantillas/`. Si algo está mal escrito, Escriba lo explica en
-            `errores.md` y sigue usando el resto.
+            Global settings. Profiles live in `profiles/` (one file per profile) and note templates in
+            `templates/`. If something is misspelled, Escriba explains it in `errors.md` and keeps
+            using the rest.
 
-            - **horario**: franja en la que el modo continuo graba (fuera de ella, el reloj descansa).
-            - **retencion_audio_movil**: días que el audio se queda en el móvil tras escribir la nota.
+            - **schedule**: the window in which continuous mode records (outside it, the watch rests).
+            - **phone_audio_retention**: days the audio stays on the phone after the note is written.
         """.trimIndent() + "\n",
 
-        "$PROFILES_DIR/casual.md" to """
+        "$PROFILES_DIR/personal.md" to """
             ---
-            nombre: Casual
+            name: Personal
             color: "#1E88E5"
-            icono: casa
-            favorito: true
-            modo: continuo
-            vad: media
-            separar_tras_silencio: 10m
-            carpeta: Grabaciones/{{yyyy}}/{{MM}}
-            idioma: es
-            descartar_triviales: true
-            guardar_audio: false
-            nota_diaria: dataview
+            icon: home
+            favorite: true
+            mode: continuous
+            vad: medium
+            split_after_silence: 10m
+            folder: Recordings/{{yyyy}}/{{MM}}
+            language: auto
+            discard_trivial: true
+            save_audio: false
+            daily_note: dataview
             ---
             ## Prompt
-            Resume en 3–5 frases de qué se ha hablado. Tono neutro, en español. Sin tareas.
+            Summarize in 3–5 sentences what was talked about. Neutral tone. No tasks.
         """.trimIndent() + "\n",
 
-        "$PROFILES_DIR/trabajo.md" to """
+        "$PROFILES_DIR/work.md" to """
             ---
-            nombre: Trabajo
+            name: Work
             color: "#2E7D32"
-            icono: maletin
-            favorito: true
-            modo: bajo_demanda
-            vad: media
-            separar_tras_silencio: 15m
-            carpeta: Trabajo/{{yyyy}}/{{MM}}
-            plantilla: _config/escriba/plantillas/acta.md
-            idioma: es
-            diarizacion: true
-            tareas: true
-            enlazar:
-              - personas
-              - proyectos
-              - clientes
-            guardar_audio: true
-            retencion_audio: 90d
-            redondeo: 1m
-            nota_diaria: dataview
+            icon: briefcase
+            favorite: true
+            mode: on_demand
+            vad: medium
+            split_after_silence: 15m
+            folder: Work/{{yyyy}}/{{MM}}
+            template: _config/escriba/templates/minutes.md
+            language: auto
+            diarization: true
+            tasks: true
+            link:
+              - people
+              - projects
+              - clients
+            save_audio: true
+            audio_retention: 90d
+            rounding: 1m
+            daily_note: dataview
             ---
-            > Para un cliente concreto, crea `trabajo-acme.md` con `hereda: trabajo`,
-            > `cliente: "[[Acme]]"` y `carpeta: Clientes/Acme/Reuniones`. Hereda todo lo demás.
+            > For a specific client, create `work-acme.md` with `inherits: work`,
+            > `client: "[[Acme]]"` and `folder: Clients/Acme/Meetings`. It inherits everything else.
 
             ## Prompt
-            Redacta un acta de la reunión con: asistentes, temas tratados, decisiones, riesgos y
-            próximos pasos. Extrae las tareas con responsable y fecha cuando se mencionen.
+            Write the minutes of the meeting with: attendees, topics discussed, decisions, risks and
+            next steps. Extract the tasks with owner and date when they're mentioned.
         """.trimIndent() + "\n",
 
         "$PROFILES_DIR/ideas.md" to """
             ---
-            nombre: Ideas
+            name: Ideas
             color: "#F9A825"
-            icono: idea
-            modo: bajo_demanda
-            vad: alta
-            separar_tras_silencio: 5m
-            carpeta: Ideas
-            idioma: es
-            guardar_audio: false
-            nota_diaria: dataview
+            icon: idea
+            mode: on_demand
+            vad: high
+            split_after_silence: 5m
+            folder: Ideas
+            language: auto
+            save_audio: false
+            daily_note: dataview
             ---
             ## Prompt
-            Devuelve la transcripción limpia (sin muletillas ni repeticiones) y 3–5 etiquetas.
-            No resumas.
+            Return the clean transcript (no filler words or repetitions) and 3–5 tags.
+            Don't summarize.
         """.trimIndent() + "\n",
 
-        "$TEMPLATES_DIR/acta.md" to """
-            # {{titulo}}
+        "$TEMPLATES_DIR/minutes.md" to """
+            # {{title}}
 
-            **Cliente:** {{cliente}} · **Duración:** {{duracion}} min · **Participantes:** {{participantes}}
+            **Client:** {{client}} · **Duration:** {{duration}} min · **Participants:** {{participants}}
 
-            ## Resumen
-            {{resumen}}
+            ## Summary
+            {{summary}}
 
-            {{tareas}}
+            {{tasks}}
 
             {{audio}}
 
-            ## Transcripción
-            {{transcripcion}}
+            ## Transcript
+            {{transcript}}
         """.trimIndent() + "\n",
 
         DAILY_TEMPLATE to dailyTemplate(),
 
-        "$CONFIG_DIR/LEEME.md" to """
+        "$CONFIG_DIR/README.md" to """
             # Escriba
 
-            Escriba escribe aquí una nota por cada conversación que graba el reloj. Todo se procesa
-            en el móvil; nada sale a la nube.
+            Escriba writes a note here for every conversation the watch records. Everything is
+            processed on the phone; nothing goes to the cloud.
 
-            ## Nota diaria
-            Activa el plugin **Notas diarias** de Obsidian con la carpeta `Diario`, el formato
-            `YYYY-MM-DD` y la plantilla `_config/escriba/plantillas/diaria.md`. La tabla de
-            grabaciones necesita el plugin **Dataview**.
+            ## Daily note
+            Turn on Obsidian's **Daily notes** plugin with the `Daily` folder, the `YYYY-MM-DD`
+            format and the `_config/escriba/templates/daily.md` template. The recordings table needs
+            the **Dataview** plugin.
 
-            ## Perfiles
-            Cada archivo de `perfiles/` es un perfil. Puedes editarlos aquí o desde la app.
-            Propiedades: `nombre`, `hereda`, `color`, `icono` (mic, maletin, idea, casa, persona,
-            grupo, telefono, coche, libro, estrella), `favorito`, `modo` (continuo, bajo_demanda),
-            `vad` (baja, media, alta), `separar_tras_silencio`, `carpeta`, `plantilla`, `whisper`,
-            `idioma` (es, en, auto), `vocabulario`, `diarizacion`, `tareas`, `enlazar`
-            (personas, proyectos, clientes), `descartar_triviales`, `guardar_audio`,
-            `retencion_audio` (p. ej. 30d o siempre), `redondeo`, `nota_diaria`
-            (dataview, enlace, ninguna) y `cliente`. El prompt va en la sección `## Prompt`.
+            ## Profiles
+            Each file in `profiles/` is a profile. You can edit them here or from the app.
+            Properties: `name`, `inherits`, `color`, `icon` (mic, briefcase, idea, home, person,
+            group, phone, car, book, star), `favorite`, `mode` (continuous, on_demand),
+            `vad` (low, medium, high), `split_after_silence`, `folder`, `template`, `engine`
+            (whisper, parakeet), `whisper`, `llm`, `language` (auto, en, es), `vocabulary`,
+            `diarization`, `tasks`, `link` (people, projects, clients), `discard_trivial`,
+            `save_audio`, `audio_retention` (e.g. 30d or forever), `rounding`, `daily_note`
+            (dataview, link, none) and `client`. The prompt goes in the `## Prompt` section.
 
-            ## Plantillas
-            Variables: `{{titulo}}`, `{{resumen}}`, `{{tareas}}`, `{{audio}}`, `{{transcripcion}}`,
-            `{{fecha}}`, `{{inicio}}`, `{{fin}}`, `{{duracion}}`, `{{perfil}}`, `{{cliente}}`,
-            `{{participantes}}`. El frontmatter lo genera siempre Escriba.
+            ## Templates
+            Variables: `{{title}}`, `{{summary}}`, `{{tasks}}`, `{{audio}}`, `{{transcript}}`,
+            `{{date}}`, `{{start}}`, `{{end}}`, `{{duration}}`, `{{profile}}`, `{{client}}`,
+            `{{participants}}`. Escriba always generates the frontmatter.
         """.trimIndent() + "\n",
     )
 
-    /**
-     * Corrige archivos que creó una versión anterior con errores, solo si siguen tal cual se
-     * crearon (si el usuario los ha cambiado, no se tocan). Devuelve lo que se ha reparado.
-     */
-    fun repair(vault: VaultAccess): List<String> {
-        val repaired = ArrayList<String>()
-        val daily = vault.readText(DAILY_TEMPLATE)
-        if (daily != null && daily.startsWith("            # {{date}}") && "```dataview" in daily && daily.lines().size <= 12) {
-            vault.writeText(DAILY_TEMPLATE, dailyTemplate())
-            repaired += DAILY_TEMPLATE
-        }
-        return repaired
-    }
-
-    /** Lo que falta por crear en la bóveda. */
+    /** What's still missing from the vault. */
     fun missing(vault: VaultAccess): List<String> =
         folders.filterNot(vault::exists) + files.keys.filterNot(vault::exists)
 
-    /** Crea lo que falta. Devuelve las rutas creadas. */
+    /** Creates what's missing. Returns the created paths. */
     fun apply(vault: VaultAccess): List<String> {
         val created = ArrayList<String>()
         folders.filterNot(vault::exists).forEach {

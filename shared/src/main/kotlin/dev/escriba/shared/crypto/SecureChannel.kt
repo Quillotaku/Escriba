@@ -6,20 +6,20 @@ import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
 /**
- * Cifrado de extremo a extremo de todo lo que viaja entre reloj y móvil (salvo el ping y el
- * propio emparejamiento), con AES-256-GCM.
+ * End-to-end encryption of everything that travels between watch and phone (except the ping and
+ * pairing itself), with AES-256-GCM.
  *
- * Formato: `[versión 1][id de clave 8][nonce 12][texto cifrado + etiqueta 16]`.
+ * Format: `[version 1][key id 8][nonce 12][ciphertext + tag 16]`.
  *
- * El [context] (la ruta del mensaje, p. ej.) va como dato autenticado: un mensaje cifrado
- * para una ruta no se puede reutilizar en otra.
+ * The [context] (e.g. the message path) is authenticated data: a message sealed for one path
+ * can't be replayed on another.
  */
 class SecureChannel(private val key: ByteArray) {
 
-    class KeyMismatchException : GeneralSecurityException("El mensaje se cifró con otra clave: hay que volver a emparejar")
+    class KeyMismatchException : GeneralSecurityException("The message was sealed with another key: pair again")
 
     init {
-        require(key.size == 32) { "La clave del enlace debe tener 32 bytes" }
+        require(key.size == 32) { "The link key must be 32 bytes" }
     }
 
     private val keyIdBytes = Crypto.sha256(key).copyOf(KEY_ID_BYTES)
@@ -36,7 +36,7 @@ class SecureChannel(private val key: ByteArray) {
 
     fun open(context: String, sealed: ByteArray): ByteArray {
         if (sealed.size < HEADER_BYTES + TAG_BITS / 8 || sealed[0] != VERSION) {
-            throw GeneralSecurityException("Mensaje cifrado con formato desconocido")
+            throw GeneralSecurityException("Sealed message in an unknown format")
         }
         if (!Crypto.constantTimeEquals(sealed.copyOfRange(1, 1 + KEY_ID_BYTES), keyIdBytes)) throw KeyMismatchException()
         val nonce = sealed.copyOfRange(1 + KEY_ID_BYTES, HEADER_BYTES)

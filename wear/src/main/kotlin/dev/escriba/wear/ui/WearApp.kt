@@ -1,5 +1,6 @@
 package dev.escriba.wear.ui
 
+import android.content.res.Resources
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -31,7 +32,10 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalScrollCaptureInProgress
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -67,29 +71,31 @@ import androidx.wear.compose.material3.lazy.transformedHeight
 import androidx.wear.compose.material3.touchTargetAwareSize
 import androidx.wear.compose.navigation3.rememberSwipeDismissableSceneStrategy
 import dev.escriba.datalayer.AppLog
+import dev.escriba.datalayer.PairingFailure
 import dev.escriba.datalayer.PairingState
+import dev.escriba.datalayer.PairingWait
 import dev.escriba.shared.audio.VadSensitivity
 import dev.escriba.shared.recording.DailyWindow
 import dev.escriba.wear.EscribaWearApp
+import dev.escriba.wear.R
 import dev.escriba.wear.recorder.MicSource
-import dev.escriba.wear.recorder.RecorderService
 import dev.escriba.wear.recorder.RecorderSettings
 import dev.escriba.wear.recorder.RecordingMode
 import dev.escriba.wear.recorder.RecordingState
-import dev.escriba.wear.transfer.UploadWorker
+import dev.escriba.wear.recorder.label
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-/** Pantallas del reloj. La principal graba; lo demás está debajo, girando la corona. */
+/** Watch screens. The main one records; the rest are below it, turning the crown. */
 private enum class Screen { HOME, PROFILES, PHONE, SETTINGS, DIAGNOSTICS }
 
-/** Lo que solo puede hacer la actividad. */
+/** What only the activity can do. */
 class WatchActions(
     val toggleRecording: () -> Unit,
     val switchProfile: (String) -> Unit,
@@ -126,9 +132,9 @@ fun WearApp(app: EscribaWearApp, settings: RecorderSettings, actions: WatchActio
     }
 }
 
-// --- Piezas comunes ----------------------------------------------------------
+// --- Shared pieces -----------------------------------------------------------
 
-/** Lista del reloj con su scaffold: cada elemento se transforma al llegar al borde de la pantalla. */
+/** Watch list with its scaffold: each item transforms as it reaches the edge of the screen. */
 @Composable
 fun WatchList(content: TransformingLazyColumnScope.(TransformationSpec) -> Unit) {
     val state = rememberTransformingLazyColumnState()
@@ -183,7 +189,7 @@ private fun Dot(color: Color, modifier: Modifier = Modifier) {
     Box(modifier.size(8.dp).clip(CircleShape).background(color))
 }
 
-/** Punto de grabación que late (fijo si el sistema pide menos movimiento o en modo ambiente). */
+/** Pulsing recording dot (steady if the system asks for less motion or in ambient mode). */
 @Composable
 private fun RecDot(animate: Boolean) {
     val alpha = if (animate) {
@@ -195,17 +201,18 @@ private fun RecDot(animate: Boolean) {
 
 private val HM = DateTimeFormatter.ofPattern("HH:mm")
 
-private fun elapsed(ms: Long, seconds: Boolean): String {
+private fun elapsed(res: Resources, ms: Long, seconds: Boolean): String {
     val s = (ms / 1000).coerceAtLeast(0)
     val h = s / 3600
     val m = (s % 3600) / 60
-    return if (seconds) "%d:%02d:%02d".format(h, m, s % 60) else "%d h %02d".format(h, m)
+    return if (seconds) "%d:%02d:%02d".format(h, m, s % 60) else res.getString(R.string.elapsed_hours, h.toInt(), m.toInt())
 }
 
-// --- Inicio ------------------------------------------------------------------
+// --- Home --------------------------------------------------------------------
 
 @Composable
 private fun HomeScreen(app: EscribaWearApp, actions: WatchActions, open: (Screen) -> Unit) {
+    val res = LocalResources.current
     val phase by RecordingState.phase.collectAsStateWithLifecycle()
     val live by RecordingState.live.collectAsStateWithLifecycle()
     val selected by app.profiles.selected.collectAsStateWithLifecycle()
@@ -214,7 +221,7 @@ private fun HomeScreen(app: EscribaWearApp, actions: WatchActions, open: (Screen
     val ambientManager = LocalAmbientModeManager.current
     val ambient = ambientManager?.currentAmbientMode is AmbientMode.Ambient
 
-    // Pendientes y batería: leer el disco en el hilo principal hacía ir a tirones la interfaz.
+    // Pending fragments and battery: reading the disk on the main thread made the UI stutter.
     var pending by remember { mutableIntStateOf(0) }
     var battery by remember { mutableStateOf<Float?>(null) }
     LaunchedEffect(Unit) {
@@ -231,7 +238,7 @@ private fun HomeScreen(app: EscribaWearApp, actions: WatchActions, open: (Screen
 
     val recording = phase == RecordingState.Phase.CAPTURING
     val paused = phase == RecordingState.Phase.PAUSED
-    val profileName = (if (phase == RecordingState.Phase.IDLE) selected?.name else live.profileName ?: selected?.name) ?: "Escriba"
+    val profileName = (if (phase == RecordingState.Phase.IDLE) selected?.name else live.profileName ?: selected?.name) ?: res.getString(R.string.app_name)
     val profileColor = WatchColors.profile(if (phase == RecordingState.Phase.IDLE) selected?.color else live.profileColor ?: selected?.color)
 
     WatchList { spec ->
@@ -250,29 +257,32 @@ private fun HomeScreen(app: EscribaWearApp, actions: WatchActions, open: (Screen
                         ElapsedClock(live.startedAtMs, ambient)
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             RecDot(animate = !ambient)
-                            Text(if (live.inSpeech) "Oyendo voz" else "Escuchando", style = MaterialTheme.typography.bodySmall, color = WatchColors.inkMuted)
+                            Text(
+                                stringResource(if (live.inSpeech) R.string.hearing_voice else R.string.listening),
+                                style = MaterialTheme.typography.bodySmall, color = WatchColors.inkMuted,
+                            )
                         }
                     }
                     paused -> Text(
-                        "En pausa" + (live.pausedUntil?.let { " · vuelve a las $it" } ?: ""),
+                        live.pausedUntil?.let { stringResource(R.string.paused_until, it) } ?: stringResource(R.string.paused),
                         style = MaterialTheme.typography.bodySmall, color = WatchColors.inkMuted, textAlign = TextAlign.Center,
                     )
                 }
-                // En modo ambiente no hay botón: solo lo esencial, en gris.
+                // No button in ambient mode: only the essentials, in grey.
                 if (!ambient) RecordButton(phase, actions.toggleRecording)
                 if (!recording && !ambient) {
-                    Text(if (paused) "Parar" else "Grabar", style = MaterialTheme.typography.labelMedium, color = WatchColors.inkMuted)
+                    Text(stringResource(if (paused) R.string.stop else R.string.record), style = MaterialTheme.typography.labelMedium, color = WatchColors.inkMuted)
                 }
                 if (!ambient) {
                     Text(
                         listOfNotNull(
                             when {
-                                peer == null -> "Sin emparejar"
-                                lost -> "Vuelve a emparejar"
-                                pending > 0 -> "$pending por enviar"
-                                else -> "Todo enviado"
+                                peer == null -> stringResource(R.string.not_paired)
+                                lost -> stringResource(R.string.pair_again_short)
+                                pending > 0 -> pluralStringResource(R.plurals.pending_to_send, pending, pending)
+                                else -> stringResource(R.string.all_sent)
                             },
-                            battery?.let { "${it.toInt()} %" },
+                            battery?.let { stringResource(R.string.battery_pct, it.toInt()) },
                         ).joinToString(" · "),
                         style = MaterialTheme.typography.bodySmall, color = WatchColors.inkMuted,
                     )
@@ -287,22 +297,31 @@ private fun HomeScreen(app: EscribaWearApp, actions: WatchActions, open: (Screen
                     transformation = SurfaceTransformation(spec),
                     colors = ButtonDefaults.filledTonalButtonColors(),
                     icon = { Dot(profileColor, Modifier.size(12.dp)) },
-                    secondaryLabel = { Text(selected?.name ?: "Sin perfiles", maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                ) { Text("Perfil") }
+                    secondaryLabel = { Text(selected?.name ?: stringResource(R.string.no_profiles), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                ) { Text(stringResource(R.string.profile)) }
             }
-            action(spec, "Móvil", if (peer == null) "Sin emparejar" else if (lost) "Vuelve a emparejar" else "Emparejado", icon = WatchIcons.Phone) { open(Screen.PHONE) }
-            action(spec, "Ajustes", icon = WatchIcons.Tune) { open(Screen.SETTINGS) }
-            action(spec, "Diagnóstico", icon = WatchIcons.Lines) { open(Screen.DIAGNOSTICS) }
+            val phoneState = res.getString(
+                when {
+                    peer == null -> R.string.not_paired
+                    lost -> R.string.pair_again_short
+                    else -> R.string.paired
+                },
+            )
+            action(spec, res.getString(R.string.phone), phoneState, icon = WatchIcons.Phone) { open(Screen.PHONE) }
+            action(spec, res.getString(R.string.settings), icon = WatchIcons.Tune) { open(Screen.SETTINGS) }
+            action(spec, res.getString(R.string.diagnostics), icon = WatchIcons.Lines) { open(Screen.DIAGNOSTICS) }
         }
     }
 }
 
 /**
- * Tiempo grabado. Es el único elemento que cambia cada segundo, así que lleva su propio tic y
- * no obliga a recomponer el resto de la pantalla. En ambiente, un tic por minuto y sin segundos.
+ * Recorded time. It's the only element that changes every second, so it has its own tick and
+ * doesn't force the rest of the screen to recompose. In ambient mode, one tick a minute and no
+ * seconds.
  */
 @Composable
 private fun ElapsedClock(startedAtMs: Long, ambient: Boolean) {
+    val res = LocalResources.current
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LocalAmbientModeManager.current?.AmbientTickEffect { now = System.currentTimeMillis() }
     if (!ambient) {
@@ -314,13 +333,13 @@ private fun ElapsedClock(startedAtMs: Long, ambient: Boolean) {
         }
     }
     Text(
-        elapsed(now - startedAtMs, seconds = !ambient),
+        elapsed(res, now - startedAtMs, seconds = !ambient),
         style = TextStyle(fontFamily = WatchMono, fontWeight = FontWeight.SemiBold, fontSize = 30.sp, lineHeight = 34.sp),
         color = if (ambient) WatchColors.inkMuted else WatchColors.ink,
     )
 }
 
-/** Botón redondo de 72 dp: contorno minio para grabar, relleno minio mientras graba. */
+/** Round 72 dp button: minium outline to record, filled with minium while recording. */
 @Composable
 private fun RecordButton(phase: RecordingState.Phase, onClick: () -> Unit) {
     val recording = phase == RecordingState.Phase.CAPTURING
@@ -344,28 +363,29 @@ private fun RecordButton(phase: RecordingState.Phase, onClick: () -> Unit) {
     ) {
         Icon(
             if (recording || paused) WatchIcons.Stop else WatchIcons.Mic,
-            contentDescription = if (recording || paused) "Parar" else "Grabar",
+            contentDescription = stringResource(if (recording || paused) R.string.stop else R.string.record),
             modifier = Modifier.size(32.dp),
         )
     }
 }
 
-// --- Perfiles ----------------------------------------------------------------
+// --- Profiles ----------------------------------------------------------------
 
 /**
- * Lista de perfiles. [pick] recibe el id elegido, si es el actual y si no se está grabando: desde
- * la app solo se selecciona; desde el Tile («Más…») se empieza a grabar con él.
+ * Profile list. [pick] gets the chosen id, whether it's the current one and whether nothing is
+ * being recorded: from the app it only selects; from the Tile ("More") it starts recording with it.
  */
 @Composable
 fun ProfilesScreen(app: EscribaWearApp, pick: (id: String, current: Boolean, idle: Boolean) -> Unit) {
+    val res = LocalResources.current
     val list by app.profiles.list.collectAsStateWithLifecycle()
     val selected by app.profiles.selected.collectAsStateWithLifecycle()
     val phase by RecordingState.phase.collectAsStateWithLifecycle()
     val idle = phase == RecordingState.Phase.IDLE
     val all = list?.profiles.orEmpty()
     WatchList { spec ->
-        header(spec, if (idle) "Perfil" else "Cambiar a")
-        if (all.isEmpty()) note(spec, "Sin perfiles: empareja el móvil y elige la bóveda allí.")
+        header(spec, res.getString(if (idle) R.string.profile else R.string.switch_to))
+        if (all.isEmpty()) note(spec, res.getString(R.string.no_profiles_hint))
         items(all, key = { it.id }) { p ->
             val current = p.id == selected?.id
             Button(
@@ -374,16 +394,34 @@ fun ProfilesScreen(app: EscribaWearApp, pick: (id: String, current: Boolean, idl
                 transformation = SurfaceTransformation(spec),
                 colors = if (current) ButtonDefaults.filledTonalButtonColors(containerColor = WatchColors.lapisSoft) else ButtonDefaults.filledTonalButtonColors(),
                 icon = { Dot(WatchColors.profile(p.color), Modifier.size(12.dp)) },
-                secondaryLabel = { Text(if (p.mode == "continuo") "Continuo" else "Bajo demanda") },
+                secondaryLabel = { Text(stringResource(if (p.continuous) R.string.mode_continuous else R.string.mode_on_demand)) },
             ) { Text(p.name, maxLines = 1, overflow = TextOverflow.Ellipsis) }
         }
     }
 }
 
-// --- Móvil -------------------------------------------------------------------
+// --- Phone -------------------------------------------------------------------
+
+private fun Resources.waiting(wait: PairingWait): String = getString(
+    when (wait) {
+        PairingWait.PHONE -> R.string.pairing_wait_phone
+        PairingWait.WATCH -> R.string.pairing_wait_watch
+        PairingWait.CODE -> R.string.pairing_wait_code
+    },
+)
+
+private fun Resources.failure(reason: PairingFailure): String = getString(
+    when (reason) {
+        PairingFailure.NO_NEARBY_PHONE -> R.string.pairing_failed_no_phone
+        PairingFailure.NOT_DIRECTLY_CONNECTED -> R.string.pairing_failed_not_direct
+        PairingFailure.COMMITMENT_MISMATCH -> R.string.pairing_failed_commitment
+        PairingFailure.BAD_CONFIRMATION -> R.string.pairing_failed_confirmation
+    },
+)
 
 @Composable
 private fun PhoneScreen(app: EscribaWearApp, actions: WatchActions) {
+    val res = LocalResources.current
     val peer by app.link.keys.peer.collectAsStateWithLifecycle()
     val pairing by app.pairing.state.collectAsStateWithLifecycle()
     val upload by app.uploader.stats.collectAsStateWithLifecycle()
@@ -392,7 +430,7 @@ private fun PhoneScreen(app: EscribaWearApp, actions: WatchActions) {
     fun at(ms: Long) = if (ms == 0L) "—" else Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).format(HM)
 
     WatchList { spec ->
-        header(spec, "Móvil")
+        header(spec, res.getString(R.string.phone))
         when (val state = pairing) {
             is PairingState.Code -> {
                 item {
@@ -403,45 +441,46 @@ private fun PhoneScreen(app: EscribaWearApp, actions: WatchActions) {
                         modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
                     )
                 }
-                note(spec, when {
-                    state.localConfirmed && !state.peerConfirmed -> "Confirma en el móvil"
-                    state.peerConfirmed && !state.localConfirmed -> "El móvil ya confirmó"
-                    else -> "¿Es el mismo código que en el móvil?"
-                })
-                if (!state.localConfirmed) action(spec, "Coincide", primary = true) { scope.launch { app.pairing.confirm() } }
-                action(spec, "Cancelar") { app.pairing.cancel() }
+                note(spec, res.getString(when {
+                    state.localConfirmed && !state.peerConfirmed -> R.string.pairing_confirm_on_phone
+                    state.peerConfirmed && !state.localConfirmed -> R.string.pairing_phone_confirmed
+                    else -> R.string.pairing_same_code
+                }))
+                if (!state.localConfirmed) action(spec, res.getString(R.string.pairing_matches), primary = true) { scope.launch { app.pairing.confirm() } }
+                action(spec, res.getString(R.string.cancel)) { app.pairing.cancel() }
             }
             is PairingState.Waiting -> {
-                note(spec, state.message)
-                action(spec, "Cancelar") { app.pairing.cancel() }
+                note(spec, res.waiting(state.wait))
+                action(spec, res.getString(R.string.cancel)) { app.pairing.cancel() }
             }
             else -> {
-                (state as? PairingState.Failed)?.reason?.let { note(spec, it) }
-                note(spec, peer?.let { "Emparejado con ${it.name}" } ?: "Sin emparejar: el reloj no envía nada.")
-                if (lost) note(spec, "El móvil ya no reconoce este emparejamiento (¿se borraron sus datos?). Vuelve a emparejar para seguir enviando.")
+                (state as? PairingState.Failed)?.reason?.let { note(spec, res.failure(it)) }
+                note(spec, peer?.let { res.getString(R.string.paired_with, it.name) } ?: res.getString(R.string.not_paired_hint))
+                if (lost) note(spec, res.getString(R.string.peer_lost_hint))
                 if (peer != null) {
                     note(
                         spec,
-                        if (upload.lastSuccessMs == 0L) "Nada enviado desde que se abrió Escriba"
-                        else "Enviados ${upload.sentFragments} (${upload.sentBytes / 1024} KB) · el último a las ${at(upload.lastSuccessMs)}",
+                        if (upload.lastSuccessMs == 0L) res.getString(R.string.nothing_sent)
+                        else res.getString(R.string.sent_summary, upload.sentFragments.toInt(), (upload.sentBytes / 1024).toInt(), at(upload.lastSuccessMs)),
                     )
-                    action(spec, "Enviar ahora", primary = true, onClick = actions.sendNow)
+                    action(spec, res.getString(R.string.send_now), primary = true, onClick = actions.sendNow)
                 }
-                action(spec, if (peer == null) "Emparejar" else "Volver a emparejar", primary = peer == null || lost) {
+                action(spec, res.getString(if (peer == null) R.string.pair else R.string.pair_again), primary = peer == null || lost) {
                     scope.launch {
-                        runCatching { app.pairing.startAsWatch() }.onFailure { AppLog.e("enlace", "No se pudo iniciar el emparejamiento", it) }
+                        runCatching { app.pairing.startAsWatch() }.onFailure { AppLog.e("link", "Couldn't start pairing", it) }
                     }
                 }
-                action(spec, "Sin optimización de batería", "Para que el sistema no corte los envíos", onClick = actions.requestBatteryExemption)
+                action(spec, res.getString(R.string.battery_exemption), res.getString(R.string.battery_exemption_hint), onClick = actions.requestBatteryExemption)
             }
         }
     }
 }
 
-// --- Ajustes -----------------------------------------------------------------
+// --- Settings ----------------------------------------------------------------
 
 @Composable
 private fun SettingsScreen(app: EscribaWearApp, settings: RecorderSettings) {
+    val res = LocalResources.current
     val phase by RecordingState.phase.collectAsStateWithLifecycle()
     val list by app.profiles.list.collectAsStateWithLifecycle()
     val idle = phase == RecordingState.Phase.IDLE
@@ -450,32 +489,37 @@ private fun SettingsScreen(app: EscribaWearApp, settings: RecorderSettings) {
     var vad by remember { mutableStateOf(settings.sensitivity) }
 
     WatchList { spec ->
-        header(spec, "Ajustes")
-        action(spec, "Micrófono", source.label, enabled = idle) {
+        header(spec, res.getString(R.string.settings))
+        action(spec, res.getString(R.string.microphone), res.getString(source.label), enabled = idle) {
             source = MicSource.entries[(source.ordinal + 1) % MicSource.entries.size]
             settings.source = source
         }
         if (list == null) {
-            // Sin perfiles del móvil, el modo y la sensibilidad se eligen aquí.
-            action(spec, "Modo", mode.label, enabled = idle) {
+            // Without profiles from the phone, mode and sensitivity are chosen here.
+            action(spec, res.getString(R.string.mode), res.getString(mode.label), enabled = idle) {
                 mode = RecordingMode.entries[(mode.ordinal + 1) % RecordingMode.entries.size]
                 settings.mode = mode
             }
-            action(spec, "Sensibilidad", vad.name.lowercase().replaceFirstChar { it.uppercase() }, enabled = idle) {
+            action(spec, res.getString(R.string.sensitivity), res.getString(vad.label), enabled = idle) {
                 vad = VadSensitivity.entries[(vad.ordinal + 1) % VadSensitivity.entries.size]
                 settings.sensitivity = vad
             }
         }
         val override = settings.windowOverride
-        note(spec, "Horario continuo: ${override ?: app.profiles.scheduleOr(settings.window)}" + if (override != null) " (prueba)" else "")
-        if (!idle) note(spec, "Para cambiar los ajustes, para antes la grabación.")
+        note(
+            spec,
+            if (override != null) res.getString(R.string.continuous_schedule_test, override.toString())
+            else res.getString(R.string.continuous_schedule, app.profiles.scheduleOr(settings.window).toString()),
+        )
+        if (!idle) note(spec, res.getString(R.string.stop_to_change))
     }
 }
 
-// --- Diagnóstico -------------------------------------------------------------
+// --- Diagnostics -------------------------------------------------------------
 
 @Composable
 private fun DiagnosticsScreen(app: EscribaWearApp, settings: RecorderSettings) {
+    val res = LocalResources.current
     val scope = rememberCoroutineScope()
     val phase by RecordingState.phase.collectAsStateWithLifecycle()
     val live by RecordingState.live.collectAsStateWithLifecycle()
@@ -483,34 +527,34 @@ private fun DiagnosticsScreen(app: EscribaWearApp, settings: RecorderSettings) {
     val idle = phase == RecordingState.Phase.IDLE
 
     WatchList { spec ->
-        header(spec, "Diagnóstico")
+        header(spec, res.getString(R.string.diagnostics))
         if (phase == RecordingState.Phase.CAPTURING) {
-            note(spec, "Voz ${live.speechPct} % · ${live.fragments} fragmentos\nNivel ${live.levelDb} dB · suelo ${live.floorDb} dB")
+            note(spec, res.getString(R.string.live_stats, live.speechPct, live.fragments, live.levelDb, live.floorDb))
         }
-        action(spec, "Probar conexión", "Ping al móvil") {
+        action(spec, res.getString(R.string.test_connection), res.getString(R.string.test_connection_hint)) {
             scope.launch {
                 runCatching { app.link.pingNearby() }
-                    .onSuccess { if (it == 0) AppLog.i("ui", "No hay ningún móvil cercano con Escriba") }
-                    .onFailure { AppLog.e("ui", "Fallo al enviar el ping", it) }
+                    .onSuccess { if (it == 0) AppLog.i("ui", "No nearby phone with Escriba") }
+                    .onFailure { AppLog.e("ui", "Failed to send the ping", it) }
             }
         }
-        action(spec, "Pedir perfiles al móvil") { scope.launch { app.profiles.requestFromPhone() } }
-        action(spec, "Horario de prueba", "Empieza en 1 min y dura 2", enabled = idle) {
+        action(spec, res.getString(R.string.request_profiles)) { scope.launch { app.profiles.requestFromPhone() } }
+        action(spec, res.getString(R.string.test_schedule), res.getString(R.string.test_schedule_hint), enabled = idle) {
             val now = LocalTime.now().withSecond(0).withNano(0)
             settings.windowOverride = DailyWindow(now.plusMinutes(1), now.plusMinutes(3))
-            AppLog.i("ui", "Horario de prueba: ${settings.windowOverride}")
+            AppLog.i("ui", "Test schedule: ${settings.windowOverride}")
         }
         if (settings.windowOverride != null) {
-            action(spec, "Horario normal", enabled = idle) {
+            action(spec, res.getString(R.string.normal_schedule), enabled = idle) {
                 settings.windowOverride = null
-                AppLog.i("ui", "Horario de prueba desactivado")
+                AppLog.i("ui", "Test schedule turned off")
             }
         }
-        action(spec, "Borrar pendientes", "Audio aún no enviado", enabled = idle) {
+        action(spec, res.getString(R.string.delete_pending), res.getString(R.string.delete_pending_hint), enabled = idle) {
             app.store.deleteAll()
-            AppLog.i("ui", "Fragmentos pendientes borrados")
+            AppLog.i("ui", "Pending fragments deleted")
         }
-        header(spec, "Registro")
+        header(spec, res.getString(R.string.log))
         items(log.takeLast(30).reversed()) { entry ->
             Text(
                 entry.toString(),

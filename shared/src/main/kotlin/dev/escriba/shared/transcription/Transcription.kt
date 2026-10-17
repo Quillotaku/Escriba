@@ -9,11 +9,11 @@ import kotlin.math.max
 import kotlin.math.sin
 
 /**
- * Traduce posiciones del audio transcrito a hora real.
+ * Maps positions in the transcribed audio to real time.
  *
- * El audio que llega a Whisper son solo los tramos de voz, uno detrás de otro (el VAD del reloj
- * quitó los silencios). Cada tramo sabe a qué hora real empezó; este mapa permite poner la hora
- * correcta a cada frase de la transcripción.
+ * The audio that reaches the recognizer is only the stretches of speech, back to back (the
+ * watch's VAD removed the silences). Each stretch knows when it really started; this map puts
+ * the right time on every sentence of the transcript.
  */
 class Timeline(segments: List<Segment>) {
 
@@ -37,17 +37,17 @@ class Timeline(segments: List<Segment>) {
 }
 
 /**
- * Reparte el audio de voz en bloques de hasta 30 s para Whisper, cortando en las uniones entre
- * tramos de voz (ahí había silencio, así que no se parte ninguna palabra).
+ * Splits the speech audio into chunks of up to 30 s for Whisper, cutting at the joins between
+ * stretches of speech (there was silence there, so no word is split).
  *
- * El codificador de Whisper procesa siempre ventanas de 30 s y es el 90 % del coste. Dejando
- * que Whisper avance solo, gasta más ventanas de las necesarias (6 en vez de 4 para 115 s en la
- * prueba de la fase 6a); con bloques de ≤30 s cada bloque es una sola pasada.
+ * Whisper's encoder always processes 30 s windows and is 90 % of the cost. Left to advance on its
+ * own, Whisper spends more windows than needed (6 instead of 4 for 115 s in the phase 6a test);
+ * with chunks of ≤30 s each chunk is a single pass.
  */
 object Chunker {
     const val MAX_CHUNK_MS = 29_500L
 
-    /** Rangos [inicio, fin) en ms dentro del audio concatenado. */
+    /** [start, end) ranges in ms within the concatenated audio. */
     fun plan(segments: List<Segment>, maxMs: Long = MAX_CHUNK_MS): List<LongRange> {
         val ranges = ArrayList<LongRange>()
         var chunkStart = 0L
@@ -55,10 +55,10 @@ object Chunker {
         for (s in segments) {
             var segStart = cursor
             val segEnd = cursor + s.durationMs
-            // Un tramo de voz de más de 30 s no tiene silencio dentro: se corta donde toque.
+            // A stretch of speech longer than 30 s has no silence inside: cut wherever needed.
             while (segEnd - chunkStart > maxMs) {
                 if (segStart > chunkStart) {
-                    // Cerrar el bloque en la unión anterior si ya tiene algo.
+                    // Close the chunk at the previous join if it already has something.
                     ranges += chunkStart until segStart
                     chunkStart = segStart
                 } else {
@@ -74,26 +74,27 @@ object Chunker {
     }
 }
 
-/** Frase de la transcripción con su hora real. */
+/** A transcript sentence with its real time. */
 @Serializable
 data class TranscriptLine(
     val wallStartMs: Long,
     val wallEndMs: Long,
     val text: String,
-    /** Hablante, cuando haya diarización (fase 8). */
+    /** Speaker, when diarization ran. */
     val speaker: String? = null,
 )
 
 /**
- * Filtro de alucinaciones típicas de Whisper. Con audio dudoso, Whisper "rellena" con frases
- * que aprendió de los subtítulos con que se entrenó (en español, sobre todo los créditos de Amara).
+ * Filter for Whisper's typical hallucinations. On doubtful audio, Whisper "fills in" with phrases
+ * learned from the subtitles it was trained on (mostly subtitle credits such as Amara's). The
+ * patterns cover Spanish and English, the languages tested so far.
  */
 object HallucinationFilter {
 
     private val PATTERNS = listOf(
         "amara\\.org", "subt[ií]tulos? (realizados|por|hechos)", "subtitulado por", "gracias por ver",
         "suscr[ií]bete", "dale (a )?like", "nos vemos en el pr[oó]ximo (v[ií]deo|cap[ií]tulo)",
-        "^\\W*(m[uú]sica|aplausos|risas|silencio)\\W*$", "^\\W*\\[[^\\]]*\\]\\W*$", "^\\W*\\([^)]*\\)\\W*$",
+        "^\\W*(m[uú]sica|aplausos|risas|silencio|music|applause|laughter|silence)\\W*$", "^\\W*\\[[^\\]]*\\]\\W*$", "^\\W*\\([^)]*\\)\\W*$",
         "thanks? (you )?for watching", "please subscribe",
     ).map { Regex(it, RegexOption.IGNORE_CASE) }
 
@@ -105,9 +106,9 @@ object HallucinationFilter {
             val text = s.text.trim()
             if (text.isEmpty() || text.all { !it.isLetterOrDigit() }) continue
             if (PATTERNS.any { it.containsMatchIn(text) }) continue
-            // Muy probablemente no había voz y el texto es corto: inventado.
+            // Most likely there was no speech and the text is short: made up.
             if (s.noSpeechProb > 0.8f && text.length < 40) continue
-            // Bucle: Whisper repite la misma frase una y otra vez.
+            // Loop: Whisper repeats the same sentence over and over.
             if (out.isNotEmpty() && out.last().text.equals(text, ignoreCase = true)) continue
             out += s.copy(text = text)
         }
@@ -115,16 +116,16 @@ object HallucinationFilter {
     }
 }
 
-/** Utilidades de señal para preparar el audio que entra en Whisper. */
+/** Signal helpers to prepare the audio that goes into the recognizer. */
 object Pcm {
 
-    /** PCM 16 bits → float en [-1, 1]. */
+    /** 16-bit PCM → float in [-1, 1]. */
     fun toFloat(samples: ShortArray, count: Int = samples.size): FloatArray = FloatArray(count) { samples[it] / 32768f }
 
     /**
-     * Pasa de [fromRate] a 16 kHz. Para factores enteros (48 → 16 kHz, lo que da el decodificador
-     * Opus de Android) usa un filtro paso bajo con ventana para no meter aliasing; para otros,
-     * interpolación lineal.
+     * Converts from [fromRate] to 16 kHz. For integer factors (48 → 16 kHz, what Android's Opus
+     * decoder outputs) it uses a windowed low-pass filter to avoid aliasing; otherwise, linear
+     * interpolation.
      */
     fun to16k(input: FloatArray, fromRate: Int): FloatArray {
         if (fromRate == 16_000) return input
@@ -158,7 +159,7 @@ object Pcm {
         return out
     }
 
-    /** Sinc con ventana de Hann, corte en la nueva frecuencia de Nyquist. */
+    /** Hann-windowed sinc, cut off at the new Nyquist frequency. */
     private fun lowPass(factor: Int): FloatArray {
         val n = 16 * factor + 1
         val cutoff = 1.0 / factor * 0.9
@@ -175,8 +176,8 @@ object Pcm {
     }
 
     /**
-     * Normaliza el volumen. El micrófono del reloj graba bajo (picos de ~0,05 en la fase 1);
-     * se sube hasta un pico de [targetPeak], sin pasar de ×[maxGain] para no amplificar ruido.
+     * Normalizes the volume. The watch's microphone records quietly (peaks of ~0.05 in phase 1);
+     * it's raised to a peak of [targetPeak], at most ×[maxGain] so noise isn't amplified.
      */
     fun normalize(input: FloatArray, targetPeak: Float = 0.7f, maxGain: Float = 12f): FloatArray {
         var peak = 0f

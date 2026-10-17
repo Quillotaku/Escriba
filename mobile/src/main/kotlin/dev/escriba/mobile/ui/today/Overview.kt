@@ -16,7 +16,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.temporal.TemporalAdjusters
 
-/** Estado de una conversación tal como lo enseña la app. */
+/** State of a conversation as the app shows it. */
 enum class ConversationState { RECORDING, PROCESSING, QUEUED, WRITTEN, FAILED, AUDIO_GONE }
 
 data class ConversationItem(
@@ -46,15 +46,15 @@ data class Overview(
     val failed: Int,
 )
 
-/** Lunes a las 00:00 de la semana de [nowMs]. */
+/** Monday at 00:00 of the week of [nowMs]. */
 fun weekStart(nowMs: Long, zone: ZoneId): Long =
     Instant.ofEpochMilli(nowMs).atZone(zone).toLocalDate()
         .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
         .atStartOfDay(zone).toInstant().toEpochMilli()
 
 /**
- * Conversaciones de una lista de sesiones, con su estado y título. Las conversaciones se parten
- * igual que al escribir las notas (por silencios del perfil), así que cuadran con la bóveda.
+ * Conversations of a list of sessions, with their state and title. Conversations are split the
+ * same way as when writing the notes (by the profile's silences), so they match the vault.
  */
 fun conversationsOf(
     sessions: List<SessionEntity>,
@@ -132,14 +132,14 @@ fun buildOverview(
     )
 }
 
-/** «1 h 25 min», «40 min». */
+/** "1 h 25 min", "40 min". */
 fun formatMinutes(min: Int): String = when {
     min < 60 -> "$min min"
     min % 60 == 0 -> "${min / 60} h"
     else -> "${min / 60} h ${min % 60} min"
 }
 
-/** «35 s», «3 min 35 s», «1 h 2 min». */
+/** "35 s", "3 min 35 s", "1 h 2 min". */
 fun formatSpeech(ms: Long): String {
     val s = ms / 1000
     return when {

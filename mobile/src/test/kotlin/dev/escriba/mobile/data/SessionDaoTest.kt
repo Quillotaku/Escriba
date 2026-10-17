@@ -13,7 +13,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/** El DAO sobre una base de datos en memoria. */
+/** The DAO on an in-memory database. */
 @RunWith(RobolectricTestRunner::class)
 class SessionDaoTest {
 
@@ -31,7 +31,7 @@ class SessionDaoTest {
     fun close() = db.close()
 
     private fun session(id: String = "s1") = SessionEntity(
-        id = id, profileId = "trabajo", profileHash = "h", startMs = 1_000, lastSpeechEndMs = 1_000, updatedAtMs = 1_000,
+        id = id, profileId = "work", profileHash = "h", startMs = 1_000, lastSpeechEndMs = 1_000, updatedAtMs = 1_000,
     )
 
     private fun fragment(seq: Int, startMs: Long, endMs: Long, speechMs: Long, size: Long) = FragmentEntity(
@@ -40,7 +40,7 @@ class SessionDaoTest {
     )
 
     @Test
-    fun `cada fragmento suma a su sesion`() = runTest {
+    fun `each fragment adds to its session`() = runTest {
         dao.addFragment(fragment(0, 1_000, 31_000, 20_000, 100), session())
         dao.addFragment(fragment(1, 40_000, 70_000, 15_000, 50), session())
         val s = dao.session("s1")!!
@@ -51,14 +51,14 @@ class SessionDaoTest {
     }
 
     @Test
-    fun `borrar una sesion borra todo lo suyo y nada mas`() = runTest {
+    fun `deleting a session deletes everything of its own and nothing else`() = runTest {
         dao.addFragment(fragment(0, 1_000, 31_000, 20_000, 100), session())
         dao.upsertSession(session("s2"))
-        dao.upsertNote(NoteEntity("s1", 1, "Trabajo/n.md", "h", null, "trabajo", 1_000, 2_000))
+        dao.upsertNote(NoteEntity("s1", 1, "Work/n.md", "h", null, "work", 1_000, 2_000))
         dao.upsertTranscript(TranscriptEntity("s1", "q8", "es", "[]", 30_000, 9_000, 2_000))
         dao.upsertInsights(InsightsEntity("s1", 1, "gemma", "h", "{}", 2_000))
         dao.upsertDiarization(DiarizationEntity("s1", "[]", "{}", "{}", 2_000))
-        dao.upsertVoice(VoiceEntity("Yo", "AAAA", 1, 2_000))
+        dao.upsertVoice(VoiceEntity("Me", "AAAA", 1, 2_000))
 
         dao.delete("s1")
 
@@ -68,13 +68,13 @@ class SessionDaoTest {
         assertNull(dao.transcript("s1"))
         assertTrue(dao.insights("s1").isEmpty())
         assertNull(dao.diarization("s1"))
-        // Otra sesión y las voces registradas no se tocan.
+        // Another session and the enrolled voices aren't touched.
         assertEquals("s2", dao.session("s2")?.id)
-        assertEquals(listOf("Yo"), dao.voices().map { it.name })
+        assertEquals(listOf("Me"), dao.voices().map { it.name })
     }
 
     @Test
-    fun `una voz registrada se actualiza en su sitio`() = runTest {
+    fun `an enrolled voice is updated in place`() = runTest {
         dao.upsertVoice(VoiceEntity("Ana", "AAAA", 1, 1))
         dao.upsertVoice(VoiceEntity("Ana", "BBBB", 2, 2))
         val voices = dao.observeVoices().first()

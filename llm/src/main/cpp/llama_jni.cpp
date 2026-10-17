@@ -1,8 +1,8 @@
-// Puente JNI entre Escriba y llama.cpp.
+// JNI bridge between Escriba and llama.cpp.
 //
-// Carga un modelo GGUF desde un descriptor abierto por la app (SAF), genera texto a partir de
-// un mensaje de sistema y uno de usuario con la plantilla de chat del propio modelo y, si se le
-// da una gramática GBNF, restringe la salida a ella (así el resultado es siempre JSON válido).
+// Loads a GGUF model from a descriptor opened by the app (SAF), generates text from a system and
+// a user message with the model's own chat template and, given a GBNF grammar, restricts the
+// output to it (so the result is always valid JSON).
 
 #include <jni.h>
 #include <android/log.h>
@@ -46,7 +46,7 @@ struct Handle {
     const llama_vocab *vocab = nullptr;
     int n_ctx = 0;
     int n_batch = 0;
-    // Estadísticas de la última generación.
+    // Statistics of the last generation.
     int prompt_tokens = 0;
     int generated_tokens = 0;
     double prompt_ms = 0;
@@ -78,7 +78,7 @@ std::string to_utf8(JNIEnv *env, jstring s) {
     return out;
 }
 
-// UTF-8 → UTF-16 a mano: NewStringUTF solo acepta "UTF-8 modificado" y fallaría con emojis.
+// UTF-8 → UTF-16 by hand: NewStringUTF only accepts "modified UTF-8" and would fail on emoji.
 jstring from_utf8(JNIEnv *env, const std::string &s) {
     std::u16string out;
     out.reserve(s.size());
@@ -130,22 +130,22 @@ Java_dev_escriba_llm_LlamaNative_nativeLoadFd(JNIEnv *, jobject, jint fd, jint n
         llama_backend_init();
     });
 
-    // dup: llama.cpp cierra el FILE al terminar, y el descriptor original es de Java.
+    // dup: llama.cpp closes the FILE when done, and the original descriptor belongs to Java.
     FILE *file = fdopen(dup(fd), "rb");
     if (file == nullptr) {
-        LOGE("No se pudo abrir el descriptor %d", fd);
+        LOGE("Couldn't open descriptor %d", fd);
         return 0;
     }
     llama_model_params mparams = llama_model_default_params();
-    mparams.n_gpu_layers = 0; // solo CPU, como Whisper
-    // Leer el modelo entero en RAM al cargar. Con mmap, las páginas se leían bajo demanda a través
-    // de la capa de almacenamiento de Android (FUSE) durante el primer cálculo, y el prompt iba a
-    // 40 tokens/s en vez de a varios cientos.
+    mparams.n_gpu_layers = 0; // CPU only, like Whisper
+    // Read the whole model into RAM on load. With mmap, pages were read on demand through
+    // Android's storage layer (FUSE) during the first computation, and the prompt ran at
+    // 40 tokens/s instead of several hundred.
     mparams.load_mode = LLAMA_LOAD_MODE_NONE;
     llama_model *model = llama_model_load_from_file_ptr(file, mparams);
     fclose(file);
     if (model == nullptr) {
-        LOGE("No se pudo cargar el modelo");
+        LOGE("Couldn't load the model");
         return 0;
     }
 
@@ -157,7 +157,7 @@ Java_dev_escriba_llm_LlamaNative_nativeLoadFd(JNIEnv *, jobject, jint fd, jint n
     cparams.n_threads_batch = n_threads;
     cparams.flash_attn_type = flash_attn == JNI_TRUE ? LLAMA_FLASH_ATTN_TYPE_ENABLED : LLAMA_FLASH_ATTN_TYPE_DISABLED;
     if (flash_attn == JNI_TRUE) {
-        // Con flash attention la caché KV puede ir cuantizada: la mitad de memoria que en F16.
+        // With flash attention the KV cache can be quantized: half the memory of F16.
         cparams.type_k = GGML_TYPE_Q8_0;
         cparams.type_v = GGML_TYPE_Q8_0;
     }
@@ -167,7 +167,7 @@ Java_dev_escriba_llm_LlamaNative_nativeLoadFd(JNIEnv *, jobject, jint fd, jint n
 
     llama_context *ctx = llama_init_from_model(model, cparams);
     if (ctx == nullptr) {
-        LOGE("No se pudo crear el contexto (n_ctx=%d)", n_ctx);
+        LOGE("Couldn't create the context (n_ctx=%d)", n_ctx);
         llama_model_free(model);
         return 0;
     }
@@ -216,7 +216,7 @@ Java_dev_escriba_llm_LlamaNative_nativeCountTokens(JNIEnv *env, jobject, jlong h
     return static_cast<jint>(tokenize(h->vocab, to_utf8(env, text), false).size());
 }
 
-// "tokens_prompt,tokens_generados,ms_prompt,ms_generacion,truncado" de la última generación.
+// "prompt_tokens,generated_tokens,prompt_ms,generation_ms,truncated" of the last generation.
 extern "C" JNIEXPORT jstring JNICALL
 Java_dev_escriba_llm_LlamaNative_nativeLastStats(JNIEnv *env, jobject, jlong handle) {
     auto *h = reinterpret_cast<Handle *>(handle);
@@ -235,7 +235,7 @@ Java_dev_escriba_llm_LlamaNative_nativeGenerate(
     g_cancel.store(false);
     h->truncated = false;
 
-    // 1. Mensajes con la plantilla de chat que trae el propio modelo.
+    // 1. Messages with the model's own chat template.
     const std::string sys = to_utf8(env, system);
     const std::string usr = to_utf8(env, user);
     std::vector<llama_chat_message> messages;
@@ -249,31 +249,31 @@ Java_dev_escriba_llm_LlamaNative_nativeGenerate(
         n = llama_chat_apply_template(tmpl, messages.data(), messages.size(), true, buf.data(), static_cast<int32_t>(buf.size()));
     }
     if (n < 0) {
-        LOGE("El modelo no tiene una plantilla de chat utilizable");
+        LOGE("The model has no usable chat template");
         return nullptr;
     }
     const std::string prompt(buf.data(), static_cast<size_t>(n));
 
-    // 2. Tokens del prompt: tienen que caber junto con la respuesta.
+    // 2. Prompt tokens: they must fit together with the answer.
     std::vector<llama_token> tokens = tokenize(h->vocab, prompt, true);
     if (static_cast<int>(tokens.size()) + max_tokens > h->n_ctx) {
-        LOGE("Prompt demasiado largo: %zu tokens + %d de respuesta > contexto %d", tokens.size(), max_tokens, h->n_ctx);
+        LOGE("Prompt too long: %zu tokens + %d for the answer > context %d", tokens.size(), max_tokens, h->n_ctx);
         return nullptr;
     }
 
     llama_memory_clear(llama_get_memory(h->ctx), true);
     llama_perf_context_reset(h->ctx);
 
-    // 3. Muestreo. La gramática va aparte: comprobarla contra todo el vocabulario en cada token
-    //    (150–260 mil tokens) es carísimo. Se elige primero el token y solo se mira si la gramática
-    //    lo acepta; únicamente si lo rechaza se filtra el vocabulario entero (como hace llama.cpp
-    //    en sus herramientas).
+    // 3. Sampling. The grammar is applied separately: checking it against the whole vocabulary on
+    //    every token (150–260 thousand tokens) is very expensive. The token is picked first and only
+    //    then checked against the grammar; the whole vocabulary is filtered only if it's rejected
+    //    (as llama.cpp's own tools do).
     const std::string gbnf = to_utf8(env, grammar);
     llama_sampler *grammar_sampler = nullptr;
     if (!gbnf.empty()) {
         grammar_sampler = llama_sampler_init_grammar(h->vocab, gbnf.c_str(), "root");
         if (grammar_sampler == nullptr) {
-            LOGE("Gramática GBNF inválida");
+            LOGE("Invalid GBNF grammar");
             return nullptr;
         }
     }
@@ -287,7 +287,7 @@ Java_dev_escriba_llm_LlamaNative_nativeGenerate(
         llama_sampler_chain_add(chain, llama_sampler_init_greedy());
     }
 
-    // 4. Prompt por lotes y generación token a token.
+    // 4. Prompt in batches and generation token by token.
     std::string out;
     bool failed = false;
     for (size_t i = 0; i < tokens.size(); i += static_cast<size_t>(h->n_batch)) {
@@ -304,13 +304,13 @@ Java_dev_escriba_llm_LlamaNative_nativeGenerate(
     while (!failed && generated < max_tokens) {
         llama_token tok = llama_sampler_sample(chain, h->ctx, -1);
         if (grammar_sampler != nullptr) {
-            // ¿Lo acepta la gramática? Prueba con un único candidato.
+            // Does the grammar accept it? Try with a single candidate.
             const float *logits = llama_get_logits_ith(h->ctx, -1);
             llama_token_data single{tok, logits[tok], 0.0f};
             llama_token_data_array one{&single, 1, -1, false};
             llama_sampler_apply(grammar_sampler, &one);
             if (std::isinf(single.logit) && single.logit < 0) {
-                // No: se aplica la gramática a todo el vocabulario y se toma el mejor permitido.
+                // No: apply the grammar to the whole vocabulary and take the best allowed token.
                 for (int t = 0; t < n_vocab; t++) candidates[static_cast<size_t>(t)] = {t, logits[t], 0.0f};
                 llama_token_data_array all{candidates.data(), candidates.size(), -1, false};
                 llama_sampler_apply(grammar_sampler, &all);
@@ -322,7 +322,7 @@ Java_dev_escriba_llm_LlamaNative_nativeGenerate(
                     }
                 }
                 if (std::isinf(best)) {
-                    LOGE("La gramática no admite ningún token: se corta la generación");
+                    LOGE("The grammar allows no token: generation stops");
                     break;
                 }
             }
@@ -348,7 +348,7 @@ Java_dev_escriba_llm_LlamaNative_nativeGenerate(
     h->generate_ms = perf.t_eval_ms;
 
     if (failed) {
-        LOGE("La generación se interrumpió (cancelada o error de llama_decode)");
+        LOGE("Generation was interrupted (cancelled or llama_decode error)");
         return nullptr;
     }
     return from_utf8(env, out);

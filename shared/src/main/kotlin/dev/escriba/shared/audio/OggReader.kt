@@ -1,9 +1,8 @@
 package dev.escriba.shared.audio
 
 /**
- * Lector mínimo de Ogg para validar y recuperar fragmentos. Se detiene en la primera
- * página incompleta o con CRC erróneo, que es lo que queda al final de un archivo
- * truncado por un cierre inesperado.
+ * Minimal Ogg reader to validate and recover fragments. It stops at the first incomplete page or
+ * page with a bad CRC, which is what's left at the end of a file cut short by an unexpected stop.
  */
 object OggReader {
 
@@ -19,7 +18,7 @@ object OggReader {
 
     data class Result(
         val pages: List<Page>,
-        /** Bytes válidos desde el principio; lo que haya detrás está corrupto o incompleto. */
+        /** Valid bytes from the start; anything after is corrupt or incomplete. */
         val validLength: Int,
         val preSkip: Int?,
         val inputSampleRate: Int?,
@@ -27,7 +26,7 @@ object OggReader {
         val audioPackets: List<ByteArray> get() = pages.drop(2).flatMap { it.packets }
         val endsWithEos: Boolean get() = pages.lastOrNull()?.let { it.flags and Ogg.FLAG_EOS != 0 } == true
 
-        /** Duración reproducible en ms: granule de la última página menos el pre-skip. */
+        /** Playable duration in ms: granule of the last page minus the pre-skip. */
         val durationMs: Long
             get() {
                 val last = pages.lastOrNull()?.granule ?: return 0
@@ -38,7 +37,7 @@ object OggReader {
     fun read(data: ByteArray): Result {
         val pages = ArrayList<Page>()
         var pos = 0
-        // Un paquete puede continuar en la página siguiente; aquí se va reconstruyendo.
+        // A packet may continue on the next page; it's rebuilt here.
         var partial: ByteArray? = null
         while (pos + Ogg.HEADER_BYTES <= data.size) {
             if (String(data, pos, 4, Charsets.US_ASCII) != Ogg.CAPTURE_PATTERN) break

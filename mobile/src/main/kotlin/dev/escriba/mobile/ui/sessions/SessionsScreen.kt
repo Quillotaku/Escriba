@@ -9,6 +9,8 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import dev.escriba.mobile.R
 import dev.escriba.mobile.EscribaApp
 import dev.escriba.mobile.ui.components.EmptyState
 import dev.escriba.mobile.ui.components.EsCard
@@ -16,15 +18,15 @@ import dev.escriba.mobile.ui.components.Overline
 import dev.escriba.mobile.ui.theme.Escriba
 import dev.escriba.mobile.ui.theme.Space
 import dev.escriba.mobile.ui.today.ConversationRow
-import dev.escriba.mobile.ui.today.ES
+import dev.escriba.mobile.ui.today.APP_LOCALE
 import dev.escriba.mobile.ui.today.local
 import dev.escriba.mobile.ui.today.rememberConversations
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
-private val DAY = DateTimeFormatter.ofPattern("EEEE d 'de' MMMM", ES)
+private val DAY = DateTimeFormatter.ofPattern("EEEE, MMMM d", APP_LOCALE)
 
-/** Todas las conversaciones, agrupadas por día, de la más reciente a la más antigua. */
+/** Every conversation, grouped by day, from the most recent to the oldest. */
 @Composable
 fun SessionsScreen(app: EscribaApp, padding: PaddingValues, openSession: (String, Int) -> Unit) {
     val conversations = rememberConversations(app, 0L)
@@ -39,21 +41,21 @@ fun SessionsScreen(app: EscribaApp, padding: PaddingValues, openSession: (String
         if (byDay.isEmpty()) {
             item {
                 EmptyState(
-                    "Aún no hay sesiones",
-                    "Cuando el reloj grabe algo y lo envíe, cada conversación aparecerá aquí con su hora, su perfil y su estado.",
+                    stringResource(R.string.sessions_empty_title),
+                    stringResource(R.string.sessions_empty_body),
                 )
             }
         }
         byDay.forEach { (day, list) ->
-            item(key = "dia-$day") {
+            item(key = "day-$day") {
                 val label = when (day) {
-                    today -> "Hoy"
-                    today.minusDays(1) -> "Ayer"
+                    today -> stringResource(R.string.tab_today)
+                    today.minusDays(1) -> stringResource(R.string.yesterday)
                     else -> day.format(DAY)
                 }
                 Overline(label, Modifier.padding(top = Space.s3))
             }
-            item(key = "lista-$day") {
+            item(key = "list-$day") {
                 EsCard {
                     list.forEachIndexed { i, conv ->
                         if (i > 0) HorizontalDivider(color = c.rule)

@@ -15,30 +15,30 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
-/** Sesión de grabación reconstruida en el móvil a partir de sus fragmentos. */
+/** A recording session rebuilt on the phone from its fragments. */
 @Entity(tableName = "sessions")
 data class SessionEntity(
     @PrimaryKey val id: String,
     val profileId: String,
     val profileHash: String,
     val startMs: Long,
-    /** Hora real del final del último tramo de voz recibido. */
+    /** Real time of the end of the last speech segment received. */
     val lastSpeechEndMs: Long,
-    /** Final de la sesión según el reloj; null mientras siga abierta. */
+    /** End of the session according to the watch; null while it's still open. */
     val endMs: Long? = null,
-    /** Número total de fragmentos, que el reloj comunica al terminar la sesión. */
+    /** Total number of fragments, which the watch reports when the session ends. */
     val expectedFragments: Int? = null,
     val receivedFragments: Int = 0,
     val speechMs: Long = 0,
     val bytes: Long = 0,
     val updatedAtMs: Long,
-    /** Cuándo se escribieron sus notas en la bóveda; null si aún no. */
+    /** When its notes were written to the vault; null if not yet. */
     val processedAtMs: Long? = null,
-    /** Perfil con el que se procesó (puede no ser el de grabación si se reprocesó con otro). */
+    /** Profile it was processed with (may differ from the recording one if reprocessed with another). */
     val processedProfileId: String? = null,
-    /** Último error al procesar, para la UI. */
+    /** Last processing error, for the UI. */
     val processError: String? = null,
-    /** Cuándo se borró el audio del móvil por la retención. */
+    /** When the audio was deleted from the phone by retention. */
     val audioDeletedAtMs: Long? = null,
 ) {
     val isComplete: Boolean get() = expectedFragments != null && receivedFragments >= expectedFragments
@@ -50,7 +50,7 @@ data class FragmentEntity(
     val seq: Int,
     val startMs: Long,
     val endMs: Long,
-    /** Tabla de segmentos en JSON, tal como llegó del reloj. */
+    /** Segment table in JSON, as it came from the watch. */
     val segmentsJson: String,
     val speechMs: Long,
     val sizeBytes: Long,
@@ -59,13 +59,13 @@ data class FragmentEntity(
     val receivedAtMs: Long,
 )
 
-/** Nota escrita en la bóveda por una conversación de una sesión. */
+/** A note written to the vault for one conversation of a session. */
 @Entity(tableName = "notes", primaryKeys = ["sessionId", "conversation"])
 data class NoteEntity(
     val sessionId: String,
     val conversation: Int,
     val path: String,
-    /** SHA-256 del texto escrito: si el archivo ya no coincide, el usuario lo ha editado. */
+    /** SHA-256 of the written text: if the file no longer matches, the user edited it. */
     val contentHash: String,
     val audioPath: String?,
     val profileId: String,
@@ -74,7 +74,7 @@ data class NoteEntity(
     val audioDeletedAtMs: Long? = null,
 )
 
-/** Transcripción de una sesión completa: las frases con su hora real, de todas sus conversaciones. */
+/** Transcript of a whole session: the lines with their real time, from all its conversations. */
 @Entity(tableName = "transcripts")
 data class TranscriptEntity(
     @PrimaryKey val sessionId: String,
@@ -86,31 +86,31 @@ data class TranscriptEntity(
     val createdAtMs: Long,
 )
 
-/** Resultado del LLM para una conversación (título, resumen, tareas…) en JSON. */
+/** LLM result for one conversation (title, summary, tasks…) in JSON. */
 @Entity(tableName = "insights", primaryKeys = ["sessionId", "conversation"])
 data class InsightsEntity(
     val sessionId: String,
     val conversation: Int,
     val model: String,
-    /** Huella del perfil: si cambia el prompt, el resultado ya no vale y se recalcula. */
+    /** Profile fingerprint: if the prompt changes, the result is no longer valid and is recomputed. */
     val profileHash: String,
     val json: String,
     val createdAtMs: Long,
 )
 
-/** Diarización de una sesión: tramos de cada hablante y la huella media de cada uno. */
+/** Diarization of a session: each speaker's turns and their average voiceprint. */
 @Entity(tableName = "diarizations")
 data class DiarizationEntity(
     @PrimaryKey val sessionId: String,
     val turnsJson: String,
-    /** Hablante → huella (base64 de float32), en JSON. */
+    /** Speaker → voiceprint (base64 of float32), in JSON. */
     val embeddingsJson: String,
-    /** Hablante → ms de voz, en JSON. */
+    /** Speaker → ms of speech, in JSON. */
     val speechMsJson: String,
     val createdAtMs: Long,
 )
 
-/** Voz registrada por el usuario. Dato biométrico: solo en esta base de datos privada. */
+/** A voice enrolled by the user. Biometric data: only in this private database. */
 @Entity(tableName = "voices")
 data class VoiceEntity(
     @PrimaryKey val name: String,
@@ -120,19 +120,19 @@ data class VoiceEntity(
 )
 
 /**
- * Uso de los modelos: una fila por transcripción o resumen hecho (no se borra al reprocesar).
- * Alimenta el panel: minutos de audio transcritos, tiempo de cálculo y tokens del LLM.
+ * Model usage: one row per transcription or summary made (not deleted when reprocessing).
+ * It feeds the dashboard: minutes of audio transcribed, compute time and LLM tokens.
  */
 @Entity(tableName = "usage_log")
 data class UsageEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    /** «asr» (transcripción) o «llm» (resumen). */
+    /** "asr" (transcription) or "llm" (summary). */
     val kind: String,
     val model: String,
     val sessionId: String,
-    /** Audio procesado (solo transcripción). */
+    /** Audio processed (transcription only). */
     val audioMs: Long,
-    /** Tiempo de cálculo. */
+    /** Compute time. */
     val computeMs: Long,
     val promptTokens: Int,
     val generatedTokens: Int,
@@ -191,7 +191,7 @@ interface SessionDao {
     @Query("SELECT * FROM sessions WHERE processedAtMs IS NOT NULL AND audioDeletedAtMs IS NULL")
     suspend fun processedWithAudio(): List<SessionEntity>
 
-    /** Añade un fragmento y actualiza los totales de su sesión de forma atómica. */
+    /** Adds a fragment and updates its session's totals atomically. */
     @Transaction
     suspend fun addFragment(fragment: FragmentEntity, sessionTemplate: SessionEntity) {
         insertFragment(fragment)
@@ -243,7 +243,7 @@ interface SessionDao {
     @Query("SELECT * FROM insights")
     fun observeInsights(): Flow<List<InsightsEntity>>
 
-    /** Fragmentos desde una fecha: el panel calcula con ellos las conversaciones de la semana. */
+    /** Fragments since a date: the dashboard computes the week's conversations from them. */
     @Query("SELECT * FROM fragments WHERE startMs >= :fromMs")
     fun observeFragmentsSince(fromMs: Long): Flow<List<FragmentEntity>>
 
@@ -293,7 +293,7 @@ abstract class EscribaDb : RoomDatabase() {
     abstract fun sessions(): SessionDao
 
     companion object {
-        /** Fase 3 → 4: estado de procesado de las sesiones y tabla de notas. */
+        /** v1 → v2: session processing state and notes table. */
         internal val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE sessions ADD COLUMN processedAtMs INTEGER")
@@ -308,7 +308,7 @@ abstract class EscribaDb : RoomDatabase() {
             }
         }
 
-        /** Fase 4 → 6: transcripciones. */
+        /** v2 → v3: transcripts. */
         internal val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
@@ -319,7 +319,7 @@ abstract class EscribaDb : RoomDatabase() {
             }
         }
 
-        /** Fase 6 → 7: resultados del LLM. */
+        /** v3 → v4: LLM results. */
         internal val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
@@ -329,7 +329,7 @@ abstract class EscribaDb : RoomDatabase() {
             }
         }
 
-        /** Fase 7 → 8: diarización y voces registradas. */
+        /** v4 → v5: diarization and enrolled voices. */
         internal val MIGRATION_4_5 = object : Migration(4, 5) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
@@ -344,8 +344,8 @@ abstract class EscribaDb : RoomDatabase() {
         }
 
         /**
-         * Fase 10 → 1.0: registro de uso de los modelos. Las transcripciones que ya había entran como
-         * historial (los tokens del resumen no se guardaban: se cuentan desde aquí).
+         * v5 → v6: model usage log. Existing transcripts are imported as history (summary tokens
+         * weren't stored before: they're counted from here on).
          */
         internal val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -361,7 +361,7 @@ abstract class EscribaDb : RoomDatabase() {
             }
         }
 
-        /** Todas las migraciones, en orden. Los tests comprueban que llevan de la v1 a la actual. */
+        /** All migrations, in order. The tests check they lead from v1 to the current version. */
         internal val MIGRATIONS get() = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
 
         fun open(context: Context): EscribaDb =

@@ -7,29 +7,29 @@ import java.io.InputStream
 import java.io.OutputStream
 
 /**
- * Formato de un fragmento en el canal: `[u32 big-endian: longitud][cabecera JSON][payload]`.
- * La cabecera va primero para que el receptor sepa qué recibe antes de leer el audio.
+ * Wire format of a fragment on a channel: `[u32 big-endian: length][JSON header][payload]`.
+ * The header comes first so the receiver knows what it's getting before reading the audio.
  */
 object Framing {
-    /** Las cabeceras reales ocupan unos cientos de bytes; esto protege de basura en el canal. */
+    /** Real headers are a few hundred bytes; this guards against garbage on the channel. */
     const val MAX_HEADER_BYTES = 64 * 1024
 
     fun writeHeader(out: OutputStream, header: ByteArray) {
-        require(header.size in 1..MAX_HEADER_BYTES) { "Cabecera de ${header.size} bytes fuera de rango" }
+        require(header.size in 1..MAX_HEADER_BYTES) { "Header of ${header.size} bytes is out of range" }
         val n = header.size
         out.write(byteArrayOf((n ushr 24).toByte(), (n ushr 16).toByte(), (n ushr 8).toByte(), n.toByte()))
         out.write(header)
     }
 
-    /** Lee la cabecera y deja [input] posicionado al inicio del payload. */
+    /** Reads the header and leaves [input] positioned at the start of the payload. */
     fun readHeader(input: InputStream): ByteArray {
         val data = DataInputStream(input)
         val n = try {
             data.readInt()
         } catch (e: EOFException) {
-            throw IOException("Canal cerrado antes de la cabecera", e)
+            throw IOException("Channel closed before the header", e)
         }
-        if (n !in 1..MAX_HEADER_BYTES) throw IOException("Longitud de cabecera inválida: $n")
+        if (n !in 1..MAX_HEADER_BYTES) throw IOException("Invalid header length: $n")
         val header = ByteArray(n)
         data.readFully(header)
         return header

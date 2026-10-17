@@ -26,6 +26,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import dev.escriba.mobile.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -36,8 +39,8 @@ import dev.escriba.mobile.processing.SessionProcessor
 import kotlinx.coroutines.launch
 
 /**
- * Hablantes de una sesión: cuánto habló cada uno y unas frases suyas para reconocerlo. Poner
- * nombre a un hablante registra su voz (solo en el móvil) y reprocesa la sesión con ese nombre.
+ * A session's speakers: how much each one spoke and a few of their lines to recognize them. Naming
+ * a speaker enrolls their voice (on the phone only) and reprocesses the session with that name.
  */
 @Composable
 fun SessionVoicesDialog(app: EscribaApp, sessionId: String, close: () -> Unit) {
@@ -51,10 +54,10 @@ fun SessionVoicesDialog(app: EscribaApp, sessionId: String, close: () -> Unit) {
     fun detect(redo: Boolean) {
         detecting = true
         error = null
-        // En el ámbito de la app: sigue aunque se cierre el diálogo.
+        // In the app's scope: it carries on even if the dialog closes.
         app.scope.launch {
             runCatching { if (redo) app.processor.redoDiarization(sessionId) else app.processor.ensureDiarization(sessionId) }
-                .onFailure { AppLog.e("voces", "No se pudieron separar los hablantes", it); error = it.message }
+                .onFailure { AppLog.e("voices", "Couldn't separate the speakers", it); error = it.message }
             detecting = false
             reload++
         }
@@ -66,42 +69,41 @@ fun SessionVoicesDialog(app: EscribaApp, sessionId: String, close: () -> Unit) {
 
     AlertDialog(
         onDismissRequest = close,
-        title = { Text("Voces de la sesión") },
+        title = { Text(stringResource(R.string.session_voices)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    "Pon nombre a quien reconozcas («Yo», «Ana López»…). Su huella de voz se guarda solo en este móvil " +
-                        "y sirve para reconocerle en las siguientes sesiones.",
+                    stringResource(R.string.session_voices_hint),
                     style = MaterialTheme.typography.bodySmall,
                 )
                 val list = speakers
                 if (!list.isNullOrEmpty() && !detecting) {
-                    OutlinedButton(onClick = { detect(true) }) { Text("Volver a detectar (${list.size} hablantes)") }
+                    OutlinedButton(onClick = { detect(true) }) { Text(pluralStringResource(R.plurals.redetect_speakers, list.size, list.size)) }
                 }
                 when {
-                    list == null -> Text("Cargando…")
+                    list == null -> Text(stringResource(R.string.loading))
                     detecting -> {
-                        Text("Separando hablantes…")
+                        Text(stringResource(R.string.separating_speakers))
                         LinearProgressIndicator(Modifier.fillMaxWidth())
                     }
                     list.isEmpty() -> {
-                        Text("Aún no se han separado los hablantes de esta sesión.")
-                        Button(onClick = { detect(false) }) { Text("Detectar hablantes") }
+                        Text(stringResource(R.string.speakers_not_separated))
+                        Button(onClick = { detect(false) }) { Text(stringResource(R.string.detect_speakers)) }
                     }
                     else -> list.forEach { s ->
                         Card(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text("${s.label} · ${s.speechMs / 1000} s de voz", fontWeight = FontWeight.SemiBold)
-                                s.samples.forEach { Text("«$it»", style = MaterialTheme.typography.bodySmall) }
+                                Text(stringResource(R.string.speaker_speech, s.label, s.speechMs / 1000), fontWeight = FontWeight.SemiBold)
+                                s.samples.forEach { Text("“$it”", style = MaterialTheme.typography.bodySmall) }
                                 if (s.hasEmbedding) {
                                     OutlinedTextField(
                                         value = names[s.cluster] ?: "",
                                         onValueChange = { names[s.cluster] = it },
-                                        label = { Text("Nombre") },
+                                        label = { Text(stringResource(R.string.name)) },
                                         singleLine = true,
                                     )
                                 } else {
-                                    Text("Muy poca voz para registrarla.", style = MaterialTheme.typography.bodySmall)
+                                    Text(stringResource(R.string.too_little_speech), style = MaterialTheme.typography.bodySmall)
                                 }
                             }
                         }
@@ -119,17 +121,17 @@ fun SessionVoicesDialog(app: EscribaApp, sessionId: String, close: () -> Unit) {
                         ProcessWorker.enqueue(app, sessionId, now = true)
                         close()
                     }.onFailure {
-                        AppLog.e("voces", "No se pudo registrar la voz", it)
+                        AppLog.e("voices", "Couldn't enroll the voice", it)
                         error = it.message
                     }
                 }
-            }) { Text("Guardar y reprocesar") }
+            }) { Text(stringResource(R.string.save_and_reprocess)) }
         },
-        dismissButton = { TextButton(onClick = close) { Text("Cerrar") } },
+        dismissButton = { TextButton(onClick = close) { Text(stringResource(R.string.close)) } },
     )
 }
 
-/** Voces registradas, con la opción de borrarlas. */
+/** Enrolled voices, with the option to delete them. */
 @Composable
 fun EnrolledVoicesCard(app: EscribaApp) {
     val voices by app.db.sessions().observeVoices().collectAsStateWithLifecycle(initialValue = emptyList())
@@ -138,13 +140,13 @@ fun EnrolledVoicesCard(app: EscribaApp) {
 
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("Voces registradas", fontWeight = FontWeight.SemiBold)
-            Text("Solo en este móvil: nunca van a la bóveda ni al reloj.", style = MaterialTheme.typography.bodySmall)
-            if (voices.isEmpty()) Text("Ninguna todavía. Ponles nombre desde «Voces» en una sesión.", style = MaterialTheme.typography.bodySmall)
+            Text(stringResource(R.string.settings_voices), fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.voices_local_only), style = MaterialTheme.typography.bodySmall)
+            if (voices.isEmpty()) Text(stringResource(R.string.voices_none_yet), style = MaterialTheme.typography.bodySmall)
             voices.forEach { v ->
                 Row {
-                    Text("${v.name} · ${v.samples} ${if (v.samples == 1) "sesión" else "sesiones"}", Modifier.weight(1f).padding(top = 12.dp))
-                    TextButton(onClick = { toDelete = v.name }) { Text("Borrar") }
+                    Text(pluralStringResource(R.plurals.voice_sessions, v.samples, v.name, v.samples), Modifier.weight(1f).padding(top = 12.dp))
+                    TextButton(onClick = { toDelete = v.name }) { Text(stringResource(R.string.delete)) }
                 }
             }
         }
@@ -153,15 +155,15 @@ fun EnrolledVoicesCard(app: EscribaApp) {
     toDelete?.let { name ->
         AlertDialog(
             onDismissRequest = { toDelete = null },
-            title = { Text("¿Borrar la voz «$name»?") },
-            text = { Text("Se borra su huella de voz. Las notas ya escritas no cambian.") },
+            title = { Text(stringResource(R.string.delete_voice_title, name)) },
+            text = { Text(stringResource(R.string.delete_voice_body)) },
             confirmButton = {
                 TextButton(onClick = {
                     scope.launch { app.voices.delete(name) }
                     toDelete = null
-                }) { Text("Borrar") }
+                }) { Text(stringResource(R.string.delete)) }
             },
-            dismissButton = { TextButton(onClick = { toDelete = null }) { Text("Cancelar") } },
+            dismissButton = { TextButton(onClick = { toDelete = null }) { Text(stringResource(R.string.cancel)) } },
         )
     }
 }

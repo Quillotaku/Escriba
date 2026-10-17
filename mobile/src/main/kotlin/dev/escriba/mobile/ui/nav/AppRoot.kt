@@ -30,6 +30,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.annotation.StringRes
+import dev.escriba.mobile.R
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
@@ -66,7 +69,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.ui.draw.scale
 
-/** Destinos de la app. Las tres pestañas tienen cada una su propia pila. */
+/** App destinations. Each tab has its own stack. */
 sealed interface Route : NavKey {
     data object Today : Route
     data object Sessions : Route
@@ -77,16 +80,16 @@ sealed interface Route : NavKey {
     data class ProfileEdit(val id: String) : Route
 }
 
-internal enum class Tab(val root: Route, val label: String, val icon: ImageVector) {
-    TODAY(Route.Today, "Hoy", Icons.Rounded.Home),
-    SESSIONS(Route.Sessions, "Sesiones", Icons.AutoMirrored.Rounded.List),
-    DASHBOARD(Route.Dashboard, "Panel", EscribaIcons.Chart),
-    SETTINGS(Route.Settings, "Ajustes", Icons.Rounded.Settings),
+internal enum class Tab(val root: Route, @StringRes val label: Int, val icon: ImageVector) {
+    TODAY(Route.Today, R.string.tab_today, Icons.Rounded.Home),
+    SESSIONS(Route.Sessions, R.string.tab_sessions, Icons.AutoMirrored.Rounded.List),
+    DASHBOARD(Route.Dashboard, R.string.tab_dashboard, EscribaIcons.Chart),
+    SETTINGS(Route.Settings, R.string.tab_settings, Icons.Rounded.Settings),
 }
 
 /**
- * Pila por pestaña. Atrás retrocede dentro de la pestaña; en la raíz de «Sesiones» o «Ajustes»
- * vuelve a «Hoy», y desde la raíz de «Hoy» sale de la app.
+ * One stack per tab. Back goes back within the tab; at the root of any other tab it returns to
+ * Today, and from the root of Today it leaves the app.
  */
 internal class Navigator {
     private val stacks = mutableStateMapOf<Tab, SnapshotStateList<Route>>()
@@ -96,7 +99,7 @@ internal class Navigator {
     fun stack(t: Tab = tab): SnapshotStateList<Route> = stacks.getOrPut(t) { listOf(t.root).toMutableStateList() }
 
     fun select(t: Tab) {
-        // Pulsar la pestaña en la que ya estás vuelve a su raíz.
+        // Tapping the tab you're already on goes back to its root.
         if (t == tab) stack(t).let { s -> while (s.size > 1) s.removeAt(s.lastIndex) }
         tab = t
     }
@@ -105,7 +108,7 @@ internal class Navigator {
         stack().add(route)
     }
 
-    /** `false` si no queda nada atrás y hay que salir de la app. */
+    /** `false` if there's nothing left behind and the app must close. */
     fun back(): Boolean {
         val s = stack()
         return when {
@@ -116,22 +119,23 @@ internal class Navigator {
     }
 }
 
-private fun title(route: Route): String? = when (route) {
+@StringRes
+private fun title(route: Route): Int? = when (route) {
     Route.Today -> null
-    Route.Sessions -> "Sesiones"
-    Route.Dashboard -> "Panel"
-    Route.Settings -> "Ajustes"
-    is Route.Session -> "Sesión"
-    is Route.ProfileEdit -> "Perfil"
+    Route.Sessions -> R.string.tab_sessions
+    Route.Dashboard -> R.string.tab_dashboard
+    Route.Settings -> R.string.tab_settings
+    is Route.Session -> R.string.title_session
+    is Route.ProfileEdit -> R.string.title_profile
     is Route.Setting -> when (route.page) {
-        SettingsPage.WATCH -> "Reloj"
-        SettingsPage.VAULT -> "Bóveda y perfiles"
-        SettingsPage.VOICES -> "Voces registradas"
-        SettingsPage.MODELS -> "Modelos"
-        SettingsPage.BENCHMARK -> "Pruebas de rendimiento"
-        SettingsPage.STORAGE -> "Almacenamiento"
-        SettingsPage.BATTERY -> "Batería"
-        SettingsPage.LOG -> "Registro"
+        SettingsPage.WATCH -> R.string.settings_watch
+        SettingsPage.VAULT -> R.string.settings_vault
+        SettingsPage.VOICES -> R.string.settings_voices
+        SettingsPage.MODELS -> R.string.settings_models
+        SettingsPage.BENCHMARK -> R.string.settings_benchmark
+        SettingsPage.STORAGE -> R.string.settings_storage
+        SettingsPage.BATTERY -> R.string.settings_battery
+        SettingsPage.LOG -> R.string.settings_log
     }
 }
 
@@ -150,9 +154,9 @@ fun AppRoot(app: EscribaApp, actions: SystemActions) {
             val t = title(current)
             if (t != null) {
                 TopAppBar(
-                    title = { Text(t, style = MaterialTheme.typography.titleLarge) },
+                    title = { Text(stringResource(t), style = MaterialTheme.typography.titleLarge) },
                     navigationIcon = {
-                        if (stack.size > 1) IconButton(onClick = { nav.back() }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Atrás") }
+                        if (stack.size > 1) IconButton(onClick = { nav.back() }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.back)) }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = c.paper, titleContentColor = c.ink, navigationIconContentColor = c.ink),
                 )
@@ -168,11 +172,11 @@ fun AppRoot(app: EscribaApp, actions: SystemActions) {
                             val scale by animateFloatAsState(
                                 targetValue = if (nav.tab == t) 1.15f else 1f,
                                 animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
-                                label = "icono",
+                                label = "icon",
                             )
                             Icon(t.icon, null, Modifier.scale(scale))
                         },
-                        label = { Text(t.label) },
+                        label = { Text(stringResource(t.label)) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = c.lapis, selectedTextColor = c.lapis, indicatorColor = c.lapisSoft,
                             unselectedIconColor = c.inkMuted, unselectedTextColor = c.inkMuted,
@@ -182,8 +186,8 @@ fun AppRoot(app: EscribaApp, actions: SystemActions) {
             }
         },
     ) { padding ->
-        // Cada pestaña muestra su propia pila; al cambiar de pestaña se conserva lo que había.
-        // Cambiar de pestaña desliza hacia su lado; dentro de una pestaña, entrar empuja y volver retira.
+        // Each tab shows its own stack; switching tabs keeps what was there.
+        // Switching tabs slides towards its side; within a tab, going in pushes and going back pulls away.
         AnimatedContent(
             targetState = nav.tab,
             transitionSpec = {
@@ -191,7 +195,7 @@ fun AppRoot(app: EscribaApp, actions: SystemActions) {
                 (slideInHorizontally(tween(260)) { direction * it / 6 } + fadeIn(tween(220)))
                     .togetherWith(slideOutHorizontally(tween(200)) { -direction * it / 6 } + fadeOut(tween(160)))
             },
-            label = "pestañas",
+            label = "tabs",
         ) { tab ->
         NavDisplay(
             backStack = nav.stack(tab),

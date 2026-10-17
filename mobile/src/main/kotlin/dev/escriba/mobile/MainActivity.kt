@@ -21,7 +21,7 @@ import dev.escriba.mobile.ui.settings.SystemActions
 import dev.escriba.mobile.ui.theme.EscribaTheme
 import dev.escriba.mobile.ui.theme.resolve
 
-/** La app del móvil: panel «Hoy», sesiones y ajustes. */
+/** The phone app: Today, sessions, dashboard and settings. */
 class MainActivity : ComponentActivity() {
 
     override fun onStart() {
@@ -40,7 +40,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val app = application as EscribaApp
-        // La notificación del procesado necesita permiso; en la primera vez lo pide el tour.
+        // The processing notification needs permission; the first time, the tour asks for it.
         if (app.onboarding.done.value && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
@@ -58,11 +58,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    @SuppressLint("BatteryLife") // app personal instalada por ADB: necesita recibir audio en segundo plano
+    @SuppressLint("BatteryLife") // sideloaded personal app: it needs to receive audio in the background
     private fun requestBatteryExemption() {
         runCatching {
             startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
-        }.onFailure { AppLog.e("ui", "No se pudo abrir el ajuste de batería", it) }
+        }.onFailure { AppLog.e("ui", "Couldn't open the battery setting", it) }
     }
 
     private fun openAppSettings() {

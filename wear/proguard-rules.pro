@@ -1,8 +1,8 @@
-# Escriba (reloj). Las librerías traen sus propias reglas (serialización, Data Layer, WorkManager,
-# Tiles). Aquí solo lo que R8 no puede deducir.
+# Escriba (watch). Libraries bring their own rules (serialization, Data Layer, WorkManager, Tiles).
+# Only what R8 can't work out goes here.
 
-# Los mensajes entre reloj y móvil se serializan con kotlinx.serialization: sus serializadores
-# generados se buscan por la clase companion.
+# Messages between watch and phone are serialized with kotlinx.serialization: their generated
+# serializers are looked up through the companion class.
 -keepclassmembers @kotlinx.serialization.Serializable class dev.escriba.** {
     *** Companion;
     kotlinx.serialization.KSerializer serializer(...);

@@ -1,7 +1,123 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Escriba</string>
-    <string name="quick_start_label">Escriba: grabar</string>
-    <string name="channel_recording">Grabación</string>
-    <string name="channel_alerts">Avisos de grabación</string>
+    <string name="quick_start_label">Escriba: record</string>
+    <string name="channel_recording">Recording</string>
+    <string name="channel_alerts">Recording alerts</string>
+
+    <!-- Common -->
+    <string name="record">Record</string>
+    <string name="stop">Stop</string>
+    <string name="cancel">Cancel</string>
+    <string name="profile">Profile</string>
+    <string name="phone">Phone</string>
+    <string name="settings">Settings</string>
+    <string name="diagnostics">Diagnostics</string>
+    <string name="mode_continuous">Continuous</string>
+    <string name="mode_on_demand">On demand</string>
+    <string name="mic_voice">Voice</string>
+    <string name="mic_raw">Mic</string>
+    <string name="vad_low">Low</string>
+    <string name="vad_medium">Medium</string>
+    <string name="vad_high">High</string>
+
+    <!-- Home -->
+    <string name="hearing_voice">Hearing voice</string>
+    <string name="listening">Listening</string>
+    <string name="paused">Paused</string>
+    <string name="paused_until">Paused · back %1$s</string>
+    <string name="not_paired">Not paired</string>
+    <string name="pair_again_short">Pair again</string>
+    <string name="paired">Paired</string>
+    <plurals name="pending_to_send">
+        <item quantity="one">%d to send</item>
+        <item quantity="other">%d to send</item>
+    </plurals>
+    <string name="all_sent">All sent</string>
+    <string name="battery_pct">%1$d %%</string>
+    <string name="no_profiles">No profiles</string>
+    <string name="elapsed_hours">%1$d h %2$02d</string>
+
+    <!-- Profiles -->
+    <string name="switch_to">Switch to</string>
+    <string name="no_profiles_hint">No profiles: pair the phone and choose the vault there.</string>
+
+    <!-- Phone -->
+    <string name="pairing_confirm_on_phone">Confirm on the phone</string>
+    <string name="pairing_phone_confirmed">The phone already confirmed</string>
+    <string name="pairing_same_code">Is it the same code as on the phone?</string>
+    <string name="pairing_matches">It matches</string>
+    <string name="pairing_wait_phone">Tap \"Pair\" on the phone</string>
+    <string name="pairing_wait_watch">Tap \"Pair\" on the watch</string>
+    <string name="pairing_wait_code">Computing the code…</string>
+    <string name="pairing_failed_no_phone">There\'s no nearby phone with Escriba. Open it on the phone and try again.</string>
+    <string name="pairing_failed_not_direct">The phone isn\'t directly connected over Bluetooth.</string>
+    <string name="pairing_failed_commitment">The phone\'s key doesn\'t match what it announced. Pairing was cancelled for safety.</string>
+    <string name="pairing_failed_confirmation">The confirmation from the phone isn\'t valid. Try again.</string>
+    <string name="paired_with">Paired with %1$s</string>
+    <string name="not_paired_hint">Not paired: the watch sends nothing.</string>
+    <string name="peer_lost_hint">The phone no longer recognizes this pairing (was its data cleared?). Pair again to keep sending.</string>
+    <string name="nothing_sent">Nothing sent since Escriba was opened</string>
+    <string name="sent_summary">Sent %1$d (%2$d KB) · the last one at %3$s</string>
+    <string name="send_now">Send now</string>
+    <string name="pair">Pair</string>
+    <string name="pair_again">Pair again</string>
+    <string name="battery_exemption">No battery optimization</string>
+    <string name="battery_exemption_hint">So the system doesn\'t cut the transfers</string>
+
+    <!-- Settings -->
+    <string name="microphone">Microphone</string>
+    <string name="mode">Mode</string>
+    <string name="sensitivity">Sensitivity</string>
+    <string name="continuous_schedule">Continuous schedule: %1$s</string>
+    <string name="continuous_schedule_test">Continuous schedule: %1$s (test)</string>
+    <string name="stop_to_change">Stop the recording to change the settings.</string>
+
+    <!-- Diagnostics -->
+    <string name="live_stats">Voice %1$d %% · %2$d fragments\nLevel %3$d dB · floor %4$d dB</string>
+    <string name="test_connection">Test connection</string>
+    <string name="test_connection_hint">Ping the phone</string>
+    <string name="request_profiles">Ask the phone for profiles</string>
+    <string name="test_schedule">Test schedule</string>
+    <string name="test_schedule_hint">Starts in 1 min and lasts 2</string>
+    <string name="normal_schedule">Normal schedule</string>
+    <string name="delete_pending">Delete pending</string>
+    <string name="delete_pending_hint">Audio not sent yet</string>
+    <string name="log">Log</string>
+
+    <!-- Microphone permission -->
+    <string name="no_microphone">No microphone</string>
+    <string name="no_microphone_hint">Escriba needs the microphone to record and the permission was denied. Turn it on in Settings → Permissions.</string>
+    <string name="open_settings">Open settings</string>
+
+    <!-- Recording service and notifications -->
+    <string name="notif_recording">Escriba is recording</string>
+    <string name="notif_paused">Escriba is paused</string>
+    <string name="notif_paused_text">Outside the schedule; back %1$s</string>
+    <string name="notif_switch_profile">Switch profile</string>
+    <string name="notif_interrupted">Recording interrupted</string>
+    <string name="notif_interrupted_text">%1$s. Tap to resume.</string>
+    <string name="pause_at">at %1$s</string>
+    <string name="pause_tomorrow_at">tomorrow at %1$s</string>
+    <string name="interrupted_cut">The recording was cut off</string>
+    <string name="interrupted_mic">The microphone failed</string>
+    <string name="interrupted_storage">The watch is out of space</string>
+    <string name="interrupted_schedule">Your recording schedule is starting</string>
+    <string name="interrupted_reboot">The watch restarted</string>
+
+    <!-- Tile -->
+    <string name="tile_no_profiles">Choose the vault on the phone to get profiles</string>
+    <string name="tile_more">More</string>
+    <string name="tile_recording">Recording</string>
+    <string name="tile_back">back %1$s</string>
+    <string name="tile_off_schedule">outside the schedule</string>
+    <string name="tile_since">since %1$s</string>
+
+    <!-- Complication -->
+    <string name="compl_paused">pause</string>
+    <string name="compl_recording_desc">Escriba is recording with the profile %1$s. Tap to stop.</string>
+    <string name="compl_paused_desc">Escriba is paused by the schedule</string>
+    <string name="compl_idle_desc">Escriba is stopped. Profile %1$s. Tap to record.</string>
+    <string name="compl_no_profile">not chosen</string>
+    <string name="compl_preview_profile">Personal</string>
 </resources>

@@ -31,12 +31,12 @@ import java.io.File
 import java.time.ZoneId
 
 /**
- * Procesa una sesión de principio a fin: transcribe, resume cada conversación con el LLM y
- * escribe sus notas. Cada etapa guarda su resultado, así que si el proceso se corta no se repite
- * lo ya hecho: una transcripción de 20 minutos no se pierde por un fallo en el resumen.
+ * Processes a session end to end: transcribes, summarizes each conversation with the LLM and
+ * writes its notes. Each stage stores its result, so if the process is cut short what's done isn't
+ * repeated: a 20-minute transcription isn't lost because the summary failed.
  *
- * Si una etapa falla, la nota se escribe igual con lo que haya (sin resumen, o sin transcripción)
- * y el motivo queda en la sesión para la app.
+ * If a stage fails, the note is written anyway with whatever there is (no summary, or no
+ * transcript) and the reason is kept in the session for the app.
  */
 class SessionProcessor(
     private val db: EscribaDb,
@@ -57,19 +57,19 @@ class SessionProcessor(
 
     suspend fun process(sessionId: String, profileOverride: String? = null, onStep: suspend (Step) -> Unit = {}): NoteWriter.Outcome {
         val dao = db.sessions()
-        val session = dao.session(sessionId) ?: error("La sesión no existe")
-        val set = profiles.reload() ?: error("No se pudo leer la configuración de la bóveda")
+        val session = dao.session(sessionId) ?: error("The session doesn't exist")
+        val set = profiles.reload() ?: error("Couldn't read the vault settings")
         val profile = notes.resolveProfile(set, session.profileId, profileOverride)
         val problems = ArrayList<String>()
 
         val raw = runCatching { ensureTranscript(sessionId, profile, onStep) }
             .onFailure {
-                AppLog.e(TAG, "Sesión ${sessionId.take(8)} sin transcribir", it)
-                problems += "sin transcripción (${it.message})"
+                AppLog.e(TAG, "Session ${sessionId.take(8)} not transcribed", it)
+                problems += "without a transcript (${it.message})"
             }
             .getOrNull()
 
-        // Quién habla: diarización + voces registradas. Si falla, la nota sale sin hablantes.
+        // Who speaks: diarization + enrolled voices. If it fails, the note goes without speakers.
         var speakers = emptyList<String>()
         val lines = if (raw != null && profile.diarization) {
             runCatching {
@@ -77,19 +77,19 @@ class SessionProcessor(
                 speakers = labeled.second
                 labeled.first
             }.onFailure {
-                AppLog.e(TAG, "Sesión ${sessionId.take(8)} sin diarizar", it)
-                problems += "sin hablantes (${it.message})"
+                AppLog.e(TAG, "Session ${sessionId.take(8)} not diarized", it)
+                problems += "without speakers (${it.message})"
             }.getOrDefault(raw)
         } else raw
 
         val insights = if (lines != null && profile.prompt.isNotBlank()) {
-            // Si cambian los nombres de los hablantes, el resumen se rehace.
+            // If the speaker names change, the summary is redone.
             val key = if (speakers.isEmpty() && lines.none { it.speaker != null }) profile.hash
             else profile.hash + "-" + Crypto.hex(Crypto.sha256(lines.mapNotNull { it.speaker }.distinct().sorted().joinToString("|").encodeToByteArray())).take(8)
             runCatching { ensureInsights(sessionId, profile, key, set.config, lines, onStep) }
                 .onFailure {
-                    AppLog.e(TAG, "Sesión ${sessionId.take(8)} sin resumir", it)
-                    problems += "sin resumen (${it.message})"
+                    AppLog.e(TAG, "Session ${sessionId.take(8)} not summarized", it)
+                    problems += "without a summary (${it.message})"
                 }
                 .getOrNull()
         } else null
@@ -97,12 +97,12 @@ class SessionProcessor(
         onStep(Step.Writing)
         val outcome = notes.process(sessionId, profileOverride, lines, insights, speakers)
         if (problems.isNotEmpty()) {
-            dao.session(sessionId)?.let { dao.upsertSession(it.copy(processError = "Nota escrita " + problems.joinToString(" y "))) }
+            dao.session(sessionId)?.let { dao.upsertSession(it.copy(processError = "Note written " + problems.joinToString(" and "))) }
         }
         return outcome
     }
 
-    /** Nombres de las notas que ya existen en las carpetas de personas, proyectos y clientes. */
+    /** Names of the notes that already exist in the people, projects and clients folders. */
     fun knownEntities(config: GlobalConfig): KnownEntities {
         fun names(folder: String) = runCatching {
             vault.list(folder).filter { !it.isDirectory && it.name.endsWith(".md") }.map { it.name.removeSuffix(".md") }
@@ -110,7 +110,7 @@ class SessionProcessor(
         return KnownEntities(names(config.peopleFolder), names(config.projectsFolder), names(config.clientsFolder))
     }
 
-    /** Hablantes de una sesión ya diarizada, para la pantalla «Voces». */
+    /** Speakers of an already diarized session, for the Voices screen. */
     data class SessionSpeaker(val cluster: Int, val label: String, val speechMs: Long, val samples: List<String>, val hasEmbedding: Boolean)
 
     suspend fun speakers(sessionId: String): List<SessionSpeaker> {
@@ -126,7 +126,7 @@ class SessionProcessor(
         return speech.keys.sorted().map { c ->
             SessionSpeaker(
                 cluster = c,
-                label = labels[c] ?: "Hablante ${c + 1}",
+                label = labels[c] ?: "${VoiceMath.UNKNOWN_PREFIX} ${c + 1}",
                 speechMs = speech[c] ?: 0,
                 samples = labeled.filter { it.speaker == "#$c" }.sortedByDescending { it.text.length }.take(3).map { it.text },
                 hasEmbedding = c in embeddings,
@@ -134,34 +134,34 @@ class SessionProcessor(
         }
     }
 
-    /** Registra la voz del hablante [cluster] de la sesión con el nombre [name]. */
+    /** Enrolls the voice of the session's speaker [cluster] under the name [name]. */
     suspend fun enrollSpeaker(sessionId: String, cluster: Int, name: String) {
-        val d = db.sessions().diarization(sessionId) ?: error("La sesión no está diarizada")
-        val embedding = decodeEmbeddings(d)[cluster] ?: error("Ese hablante tiene muy poca voz para registrarlo")
+        val d = db.sessions().diarization(sessionId) ?: error("The session isn't diarized")
+        val embedding = decodeEmbeddings(d)[cluster] ?: error("That speaker has too little speech to enroll")
         voices.enroll(name.trim(), embedding)
     }
 
     private fun decodeEmbeddings(d: DiarizationEntity): Map<Int, FloatArray> = cleaned(d).embeddings
 
-    /** Diarización guardada, con los hablantes partidos ya unidos. */
+    /** Stored diarization, with split speakers already joined. */
     private fun cleaned(d: DiarizationEntity) = VoiceMath.merge(
         EscribaJson.decodeFromString<List<SpeakerTurn>>(d.turnsJson),
         EscribaJson.decodeFromString<Map<Int, String>>(d.embeddingsJson).mapValues { VoiceStore.decode(it.value) },
         EscribaJson.decodeFromString<Map<Int, Long>>(d.speechMsJson),
     )
 
-    /** Descarta los hablantes detectados y los vuelve a separar. */
+    /** Drops the detected speakers and separates them again. */
     suspend fun redoDiarization(sessionId: String): DiarizationEntity {
         db.sessions().deleteDiarization(sessionId)
         return ensureDiarization(sessionId)
     }
 
-    /** Separa los hablantes de una sesión (o reutiliza lo ya calculado). */
+    /** Separates a session's speakers (or reuses what was already computed). */
     suspend fun ensureDiarization(sessionId: String, onStep: suspend (Step) -> Unit = {}): DiarizationEntity {
         val dao = db.sessions()
         return dao.diarization(sessionId) ?: run {
             val fragments = dao.fragments(sessionId)
-            check(fragments.all { File(it.path).exists() }) { "el audio ya no está en el móvil (retención)" }
+            check(fragments.all { File(it.path).exists() }) { "the audio is no longer on the phone (retention)" }
             onStep(Step.Diarizing(fragments.sumOf { it.speechMs } / 1000))
             val r = diarizer.diarize(SpeechAudio.decode(fragments))
             DiarizationEntity(
@@ -175,8 +175,8 @@ class SessionProcessor(
     }
 
     /**
-     * Frases de la sesión con su hablante, si está diarizada, y los nombres de las voces
-     * registradas. Es lo que muestra el detalle de la sesión; no calcula nada nuevo.
+     * The session's lines with their speaker, if it's diarized, and the names of the enrolled
+     * voices. It's what the session detail shows; it doesn't compute anything new.
      */
     suspend fun labeledLines(sessionId: String): Pair<List<TranscriptLine>, Set<String>> {
         val dao = db.sessions()
@@ -186,7 +186,7 @@ class SessionProcessor(
         return label(d, lines, voices.all()).first to known
     }
 
-    /** Frases con su hablante y la lista de hablantes reconocidos por su voz. */
+    /** Lines with their speaker and the list of speakers recognized by their voice. */
     private suspend fun labelSpeakers(
         sessionId: String,
         lines: List<TranscriptLine>,
@@ -200,12 +200,12 @@ class SessionProcessor(
         val clean = cleaned(d)
         val turns = clean.turns
         val speech = clean.speechMs
-        // Con un solo hablante no hace falta etiquetar nada… salvo que sea una voz conocida.
+        // With a single speaker there's nothing to label… unless it's a known voice.
         val labels = VoiceMath.identify(clean.embeddings, enrolled).toMutableMap()
-        speech.keys.forEach { c -> labels.getOrPut(c) { "Hablante ${labels.size + 1}" } }
+        speech.keys.forEach { c -> labels.getOrPut(c) { "${VoiceMath.UNKNOWN_PREFIX} ${labels.size + 1}" } }
         val known = enrolled.map { it.name }.toSet()
         if (speech.size <= 1 && labels.values.none { it in known }) return lines to emptyList()
-        val labeled = VoiceMath.assign(lines, turns) { labels[it] ?: "Hablante ${it + 1}" }
+        val labeled = VoiceMath.assign(lines, turns) { labels[it] ?: "${VoiceMath.UNKNOWN_PREFIX} ${it + 1}" }
         return labeled to labels.values.filter { it in known }.distinct()
     }
 
@@ -214,8 +214,8 @@ class SessionProcessor(
         profile: Profile,
         onStep: suspend (Step) -> Unit,
     ): List<TranscriptLine> {
-        val motor = if (profile.engine == "parakeet") Transcriber.Motor.PARAKEET else Transcriber.Motor.WHISPER
-        val model = if (motor == Transcriber.Motor.PARAKEET) ParakeetAsr.MODEL_NAME else profile.whisper
+        val engine = if (profile.engine == "parakeet") Transcriber.Engine.PARAKEET else Transcriber.Engine.WHISPER
+        val model = if (engine == Transcriber.Engine.PARAKEET) ParakeetAsr.MODEL_NAME else profile.whisper
         val language = profile.language
         val vocabulary = profile.vocabulary
         val dao = db.sessions()
@@ -223,14 +223,14 @@ class SessionProcessor(
             if (existing.model.contains(model.removePrefix("ggml-").removeSuffix(".bin"))) {
                 return EscribaJson.decodeFromString(existing.linesJson)
             }
-            AppLog.i(TAG, "La sesión se transcribió con ${existing.model}; el perfil pide $model: se transcribe de nuevo")
+            AppLog.i(TAG, "The session was transcribed with ${existing.model}; the profile asks for $model: transcribing again")
         }
         val fragments = dao.fragments(sessionId)
-        check(fragments.isNotEmpty()) { "la sesión no tiene fragmentos" }
-        check(fragments.all { File(it.path).exists() }) { "el audio ya no está en el móvil (retención)" }
+        check(fragments.isNotEmpty()) { "the session has no fragments" }
+        check(fragments.all { File(it.path).exists() }) { "the audio is no longer on the phone (retention)" }
 
         onStep(Step.Transcribing(model, fragments.sumOf { it.speechMs } / 1000))
-        val result = transcriber.open(model, motor = motor).use { it.transcribe(fragments, language, vocabulary) }
+        val result = transcriber.open(model, engine = engine).use { it.transcribe(fragments, language, vocabulary) }
         dao.insertUsage(
             UsageEntity(
                 kind = UsageEntity.ASR, model = result.stats.model, sessionId = sessionId, audioMs = result.stats.audioMs,
@@ -251,7 +251,7 @@ class SessionProcessor(
         return result.lines
     }
 
-    /** Resultado del LLM por conversación (índice → insights). Reutiliza lo ya calculado con el mismo modelo y perfil. */
+    /** LLM result per conversation (index → insights). Reuses what was computed with the same model and profile. */
     private suspend fun ensureInsights(
         sessionId: String,
         profile: Profile,
@@ -298,6 +298,6 @@ class SessionProcessor(
     }
 
     private companion object {
-        const val TAG = "procesado"
+        const val TAG = "processing"
     }
 }

@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -80,7 +82,8 @@ enum class SettingsPage { WATCH, VAULT, VOICES, MODELS, BENCHMARK, STORAGE, BATT
 @Composable
 fun Page(padding: PaddingValues, content: @Composable () -> Unit) {
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+        // The keyboard shrinks the viewport, so a focused field scrolls above it instead of hiding behind.
+        Modifier.fillMaxSize().consumeWindowInsets(padding).imePadding().verticalScroll(rememberScrollState())
             .padding(start = Space.s4, end = Space.s4, top = padding.calculateTopPadding() + Space.s2, bottom = padding.calculateBottomPadding() + Space.s6),
         verticalArrangement = Arrangement.spacedBy(Space.s3),
     ) { content() }

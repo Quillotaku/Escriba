@@ -7,6 +7,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
@@ -236,8 +238,9 @@ fun ProfileEditorPage(app: EscribaApp, profileId: String, padding: PaddingValues
     val opened by produceState<Pair<String, Long?>?>(null, profileId) { value = withContext(Dispatchers.IO) { app.profiles.readProfile(profileId) } }
     val ownProps = remember(opened) { opened?.let { Frontmatter.parse(it.first).first.properties } ?: linkedMapOf() }
 
-    var name by remember(profile) { mutableStateOf(profile.name) }
-    var folder by remember(profile) { mutableStateOf(profile.folder) }
+    // Text lives in TextFieldState: typing updates the field alone, not the whole page.
+    val name = remember(profile) { TextFieldState(profile.name) }
+    val folder = remember(profile) { TextFieldState(profile.folder) }
     var continuous by remember(profile) { mutableStateOf(profile.continuous) }
     var favorite by remember(profile) { mutableStateOf(profile.favorite) }
     var saveAudio by remember(profile) { mutableStateOf(profile.saveAudio) }
@@ -247,7 +250,7 @@ fun ProfileEditorPage(app: EscribaApp, profileId: String, padding: PaddingValues
     var discard by remember(profile) { mutableStateOf(profile.discardTrivial) }
     var icon by remember(profile) { mutableStateOf(profile.icon) }
     var color by remember(profile) { mutableStateOf(profile.color) }
-    var prompt by remember(opened) { mutableStateOf(opened?.first?.let { ProfileLoader.extractPrompt(Frontmatter.parse(it).first.body) } ?: profile.prompt) }
+    val prompt = remember(opened) { TextFieldState(opened?.first?.let { ProfileLoader.extractPrompt(Frontmatter.parse(it).first.body) } ?: profile.prompt) }
     var error by remember { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
 
@@ -257,8 +260,8 @@ fun ProfileEditorPage(app: EscribaApp, profileId: String, padding: PaddingValues
         }
         Overline(stringResource(R.string.general))
         EsCard {
-            OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.name)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(folder, { folder = it }, label = { Text(stringResource(R.string.notes_folder)) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+            OutlinedTextField(name, label = { Text(stringResource(R.string.name)) }, lineLimits = TextFieldLineLimits.SingleLine, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(folder, label = { Text(stringResource(R.string.notes_folder)) }, lineLimits = TextFieldLineLimits.SingleLine, modifier = Modifier.fillMaxWidth(),
                 supportingText = { Text(stringResource(R.string.notes_folder_hint)) })
             Text(stringResource(R.string.color), style = MaterialTheme.typography.labelLarge, color = c.ink)
             ColorPicker(color) { color = it }
@@ -303,7 +306,8 @@ fun ProfileEditorPage(app: EscribaApp, profileId: String, padding: PaddingValues
         }
 
         Overline(stringResource(R.string.summary_instructions), Modifier.padding(top = Space.s3))
-        OutlinedTextField(prompt, { prompt = it }, modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp), textStyle = MaterialTheme.typography.bodyLarge)
+        // Bounded height: a long prompt scrolls inside the field instead of re-laying out the page on every line.
+        OutlinedTextField(prompt, modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp, max = 360.dp), textStyle = MaterialTheme.typography.bodyLarge)
 
         error?.let { Text(it, color = c.danger, style = MaterialTheme.typography.bodyMedium) }
         Row(horizontalArrangement = Arrangement.spacedBy(Space.s2), modifier = Modifier.padding(top = Space.s2)) {
@@ -320,8 +324,8 @@ fun ProfileEditorPage(app: EscribaApp, profileId: String, padding: PaddingValues
                         }
                         if (key in ownProps || now != inherited) changes[key] = value
                     }
-                    set("name", YamlValue.Text(name.trim()), profile.name)
-                    set("folder", YamlValue.Text(folder.trim()), profile.folder)
+                    set("name", YamlValue.Text(name.text.trim().toString()), profile.name)
+                    set("folder", YamlValue.Text(folder.text.trim().toString()), profile.folder)
                     set("icon", YamlValue.Text(icon), profile.icon)
                     set("color", YamlValue.Text(color), profile.color)
                     set("mode", YamlValue.Text(if (continuous) ProfileLoader.MODE_CONTINUOUS else ProfileLoader.MODE_ON_DEMAND), profile.mode)
@@ -332,7 +336,8 @@ fun ProfileEditorPage(app: EscribaApp, profileId: String, padding: PaddingValues
                     set("tasks", YamlValue.Bool(tasks), profile.tasks)
                     set("discard_trivial", YamlValue.Bool(discard), profile.discardTrivial)
                     val own = opened?.first?.let { ProfileLoader.extractPrompt(Frontmatter.parse(it).first.body) }.orEmpty()
-                    val promptToSave = if (own.isEmpty() && prompt.trim() == profile.prompt.trim()) null else prompt
+                    val text = prompt.text.toString()
+                    val promptToSave = if (own.isEmpty() && text.trim() == profile.prompt.trim()) null else text
                     app.profiles.saveProfile(profile.id, changes, promptToSave, opened?.second)
                         .onSuccess { close() }
                         .onFailure { error = it.message; saving = false }

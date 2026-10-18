@@ -32,8 +32,8 @@ android {
         applicationId = "dev.escriba"
         minSdk = 35
         targetSdk = 36
-        versionCode = 110
-        versionName = "1.1.0"
+        versionCode = 120
+        versionName = "1.2.0"
         // arm64 only: without this, sherpa-onnx's libraries for four architectures would be packaged.
         ndk { abiFilters += "arm64-v8a" }
     }

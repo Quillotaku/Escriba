@@ -7,7 +7,7 @@ Escriba turns a Wear OS watch and an Android phone into a Plaud-style conversati
 who's speaking, summarizes with an LLM and writes each conversation as an Obsidian note with its
 summary, decisions, tasks and transcript. No Internet, no accounts and no cloud.
 
-> Version 1.1.0 · Android 15+ (arm64) and Wear OS 5+ · English interface
+> Version 1.2.0 · Android 15+ (arm64) and Wear OS 5+ · English interface
 
 ## What it does
 
